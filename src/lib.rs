@@ -22,10 +22,6 @@ enum Emphasis {
         start_cursor: usize,
         end_cursor: usize,
     },
-    BoldItalic {
-        start_cursor: usize,
-        end_cursor: usize,
-    },
     Code {
         start_cursor: usize,
         end_cursor: usize,
@@ -90,12 +86,7 @@ pub fn parse<'a>(content: &'a str) -> Vec<Node<'a>> {
                     end_cursor,
                 });
             });
-            emphasis(line, '*', 3, |start_cursor, end_cursor| {
-                emph.push(Emphasis::BoldItalic {
-                    start_cursor,
-                    end_cursor,
-                });
-            });
+
             emphasis(line, '*', 1, |start_cursor, end_cursor| {
                 emph.push(Emphasis::Italic {
                     start_cursor,
@@ -162,11 +153,11 @@ where
             let start = start_pos.unwrap();
             let end = end_pos.unwrap();
 
-            if end - start > 0 {
+            if end - start > 1 {
                 cb(start, end);
-                start_pos = None;
-                end_pos = None;
             }
+            start_pos = None;
+            end_pos = None;
         }
     }
 }
