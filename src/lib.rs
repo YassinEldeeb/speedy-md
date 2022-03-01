@@ -12,6 +12,7 @@ impl Parser {
         for line in lines {
             if line.starts_with("#") {
                 result.push_str(&self.identify_header(line));
+            } else if line.is_empty() {
             } else {
                 result.push_str(&self.identify_paragraph(line));
             }
@@ -44,7 +45,7 @@ impl Parser {
 
         let mut formatted_line = String::from(line);
 
-        // TODO: multiple pattern matches on the same line causes a conflict in the matching range
+        // DONE: multiple pattern matches on the same line causes a conflict in the matching range
         // EX: He**l**lo Gu**y**s
         // when inserting <b> like this <b>l</b>
         // the range index of the second match isn't valid
@@ -54,15 +55,44 @@ impl Parser {
             pattern: &str,
             tag_name: &str,
         ) -> String {
+            let mut offset = 0;
+
+            // # Logic!
+
+            // He**l**lo **Y**
+            // (4, 5)
+            // (12, 13)
+            // He<b>l</b>lo **Y**
+            // (12 + 3, 13 + 3)
+            // (15, 16)
+
+            // *I'*m *super*
+            // (1, 3)
+            // (7, 12)
+            // <em>I'</em>m *super*
+            // (7 + 7, 12 + 7)
+            // (14, 19)
+
+            // ~~I'~~m ~~super~~
+            // (2, 4)
+            // (10, 15)
+            // <del>I'</del>m ~~super~~
+            // (10 + 7, 15 + 7)
+            // (17, 22)
+
+            // Solution
+            // "<tag></tag>".len() - identifier.len()
             for (s, e) in res {
                 line = format!(
                     "{}<{}>{}</{}>{}",
-                    &line[..s - pattern.len()],
+                    &line[..s + offset - pattern.len()],
                     tag_name,
-                    &line[s..e],
+                    &line[s + offset..e + offset],
                     tag_name,
-                    &line[e + pattern.len()..]
+                    &line[e + offset + pattern.len()..]
                 );
+
+                offset += 2 + tag_name.len() * 2 + 3 - pattern.len();
             }
 
             line
@@ -87,6 +117,10 @@ impl Parser {
 
         let chars = line.chars();
 
+        // Chain an empty character so that the last iteration can run to
+        // catch matches at the end of a line.
+        let chars = chars.chain(['‎'].into_iter());
+
         let mut start_pos = None;
         let mut end_pos = None;
         let mut matches = 0;
@@ -103,7 +137,7 @@ impl Parser {
 
             if matches == current_pattern.len() {
                 if start_pos.is_some() {
-                    end_pos = Some(idx - start_pattern.len());
+                    end_pos = Some(idx - end_pattern.len());
                 } else {
                     start_pos = Some(idx);
                 }
@@ -118,7 +152,7 @@ impl Parser {
             }
 
             if start_pos.is_some() && end_pos.is_some() {
-                if start_pos.unwrap() - end_pos.unwrap() > 1 {
+                if end_pos.unwrap() - start_pos.unwrap() > 1 {
                     captured.push((start_pos.unwrap(), end_pos.unwrap()));
                 }
                 start_pos = None;

@@ -1,4 +1,4 @@
-# I'm **super** *c*hunky
+# I'm **super** *ch*unky
 
 ## I'm less *~~**chu**~~*nky
 
