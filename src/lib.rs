@@ -18,7 +18,7 @@ impl Parser {
                 continue;
             }
 
-            if line.starts_with("# ") {
+            if line.starts_with("#") {
                 result.push_str(&self.identify_header(line));
             } else if line.starts_with(">") {
                 result.push_str(&self.identify_blockquote(idx, &lines, &mut skip));
@@ -219,12 +219,72 @@ mod tests {
     use super::*;
 
     #[test]
-    fn capture_simple_pattern() {
+    fn blackquote() {
+        let parser = Parser::new();
+        let mut skip = 0;
+
+        let blackquote =
+            parser.identify_blockquote(0, &vec!["> Yassin Said", "> That he's so dumb"], &mut skip);
+        assert_eq!(
+            blackquote,
+            "<blockquote><p>Yassin Said</p><p>That he's so dumb</p></blockquote>"
+        );
+    }
+
+    #[test]
+    fn header() {
         let parser = Parser::new();
 
-        let captured = parser.capture_simple_pattern("*&This is a simple line*& *&l*&", "*&");
+        let header = parser.identify_header("# Hey");
+        assert_eq!(header, "<h1>Hey</h1>");
 
-        assert_eq!(captured, vec![(2, 23), (28, 29)]);
+        let header = parser.identify_header("##### Hola!");
+        assert_eq!(header, "<h5>Hola!</h5>");
+    }
+
+    #[test]
+    fn paragraph() {
+        let parser = Parser::new();
+
+        let paragraph = parser.identify_paragraph("  Hello World ");
+        assert_eq!(paragraph, "<p>Hello World</p>");
+
+        let paragraph = parser.identify_paragraph("#Hello World");
+        assert_eq!(paragraph, "<p>#Hello World</p>");
+    }
+
+    #[test]
+    fn emphasis() {
+        let parser = Parser::new();
+
+        let emphasised = parser.emphasis("**H**ello, I'm *Yassin* not ~~Husien~~. I'm a `coder`");
+        assert_eq!(
+            emphasised,
+            "<b>H</b>ello, I'm <em>Yassin</em> not <del>Husien</del>. I'm a <code>coder</code>"
+        );
+
+        let emphasised = parser.emphasis("Can emph las**t**");
+        assert_eq!(emphasised, "Can emph las<b>t</b>");
+
+        let emphasised = parser.emphasis("Can emph ***~~nested~~***");
+        assert_eq!(emphasised, "Can emph <b><em><del>nested</del></b></em>");
+
+        let emphasised = parser.emphasis("*C*an emph first");
+        assert_eq!(emphasised, "<em>C</em>an emph first");
+    }
+
+    #[test]
+    fn capture_comlex_pattern() {
+        let parser = Parser::new();
+
+        let captured = parser.capture_pattern("![link]", "![", "]");
+        assert_eq!(captured, vec![(2, 6)]);
+
+        let captured = parser.capture_pattern("*&<link>~!", "*&<", ">~!");
+        assert_eq!(captured, vec![(3, 7)]);
+
+        let captured = parser.capture_pattern("^(special) something ^(or) no^(t)", "^(", ")");
+        assert_eq!(captured, vec![(2, 9), (23, 25), (31, 32)]);
     }
 
     #[test]
@@ -234,8 +294,14 @@ mod tests {
         let captured = parser.capture_simple_pattern("*&This is a simple line*& *&l*&", "*&");
         assert_eq!(captured, vec![(2, 23), (28, 29)]);
 
-        let captured = parser.capture_simple_pattern("``Th`is `is`a si`mp`le line``", "*&");
-        assert_eq!(captured, vec![(2, 23), (28, 29)]);
+        let captured = parser.capture_simple_pattern("**Th**is **is** a si**mple line**", "**");
+        assert_eq!(captured, vec![(2, 4), (11, 13), (22, 31)]);
+
+        let captured = parser.capture_simple_pattern("Last lette`r`", "`");
+        assert_eq!(captured, vec![(11, 12)]);
+
+        let captured = parser.capture_simple_pattern("`F`irst letter", "`");
+        assert_eq!(captured, vec![(1, 2)]);
     }
 
     #[test]
