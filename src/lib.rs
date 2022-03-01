@@ -1,5 +1,9 @@
 pub struct Parser {}
 
+// Remember to check this out when implementing merging <p> tags
+// And catching blockquotes
+// https://www.google.com/search?q=how+to+skip+the+next+3+iterations+of+a+loop+in+rust&client=firefox-b-d&channel=trow5&sxsrf=APq-WBuGqOp0npRLcHpjdEfkOjmCYm8Z5g%3A1646140375716&ei=1xseYt-eK5P8sAeLnLWIAQ&ved=0ahUKEwif5uDi_qT2AhUTPuwKHQtODREQ4dUDCA0&uact=5&oq=how+to+skip+the+next+3+iterations+of+a+loop+in+rust&gs_lcp=Cgdnd3Mtd2l6EAMyBAghEBU6BwgAEEcQsANKBAhBGABKBAhGGABQvgdYvQpgmQtoA3ABeACAAbcBiAH3A5IBAzAuM5gBAKABAcgBCMABAQ&sclient=gws-wiz
+
 impl Parser {
     pub fn new() -> Self {
         Parser {}
