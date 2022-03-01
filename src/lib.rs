@@ -1,207 +1,139 @@
-#[derive(Debug)]
-struct Position {
-    line: usize,
-    cursor: usize,
-}
+pub struct Parser {}
 
-#[derive(Debug)]
-pub struct Node<'a> {
-    value: Type<'a>,
-    boundaries: (Position, Position),
-}
-
-#[derive(Debug)]
-enum Emphasis {
-    Bold {
-        start_cursor: usize,
-        end_cursor: usize,
-    },
-    Italic {
-        start_cursor: usize,
-        end_cursor: usize,
-    },
-    Code {
-        start_cursor: usize,
-        end_cursor: usize,
-    },
-}
-
-#[derive(Debug)]
-enum Type<'a> {
-    Heading {
-        value: &'a str,
-        size: usize,
-        emphasis: Vec<Emphasis>,
-    },
-    Paragraph {
-        value: String,
-    },
-    Blockquotes {
-        value: String,
-    },
-    List {
-        value: Vec<String>,
-    },
-    UnorderedLists {
-        value: Vec<String>,
-    },
-    CodeBlocks {
-        value: String,
-        language: String,
-    },
-    Links {
-        label: String,
-        url: String,
-    },
-    Image {
-        label: String,
-        url: String,
-    },
-}
-
-pub fn parse<'a>(content: &'a str) -> Vec<Node<'a>> {
-    let mut result: Vec<Node> = Vec::new();
-
-    for (idx, line) in content.lines().enumerate() {
-        let line = line.trim();
-
-        if line.starts_with('#') {
-            let mut size = 0;
-
-            for e in line.chars() {
-                if e == '#' {
-                    size += 1;
-                } else {
-                    break;
-                }
-            }
-
-            let mut emph = Vec::new();
-
-            emphasis(line, '*', 2, |start_cursor, end_cursor| {
-                emph.push(Emphasis::Bold {
-                    start_cursor,
-                    end_cursor,
-                });
-            });
-
-            emphasis(line, '*', 1, |start_cursor, end_cursor| {
-                emph.push(Emphasis::Italic {
-                    start_cursor,
-                    end_cursor,
-                });
-            });
-            emphasis(line, '`', 1, |start_cursor, end_cursor| {
-                emph.push(Emphasis::Code {
-                    start_cursor,
-                    end_cursor,
-                });
-            });
-
-            result.push(Node {
-                value: Type::Heading {
-                    value: &line[size..].trim(),
-                    size,
-                    emphasis: emph,
-                },
-                boundaries: (
-                    Position {
-                        line: idx,
-                        cursor: 0,
-                    },
-                    Position {
-                        line: idx,
-                        cursor: line.len(),
-                    },
-                ),
-            })
-        }
+impl Parser {
+    pub fn new() -> Self {
+        Parser {}
     }
 
-    result
-}
+    pub fn get_html(&self, content: String) -> String {
+        let mut result = String::new();
 
-fn emphasis<T>(line: &str, identifier: char, repeat: usize, mut cb: T)
-where
-    T: FnMut(usize, usize),
-{
-    let mut identifier_repeatition = 0;
-    let mut start_pos = None;
-    let mut end_pos = None;
-
-    for (idx, i) in line.chars().enumerate() {
-        if i == identifier {
-            identifier_repeatition += 1;
-        } else {
-            identifier_repeatition = 0;
-        }
-
-        if identifier_repeatition == repeat {
-            if start_pos.is_some() {
-                // Add 1 so that execlusive range can contain the last char
-                end_pos = Some(idx - repeat + 1);
-                identifier_repeatition = 0;
+        let lines = content.lines().map(|l| l.trim());
+        for line in lines {
+            if line.starts_with("#") {
+                result.push_str(&self.identify_header(line));
             } else {
-                start_pos = Some(idx + 1);
-                identifier_repeatition = 0;
+                result.push_str(&self.identify_paragraph(line));
             }
         }
 
-        if start_pos.is_some() && end_pos.is_some() {
-            let start = start_pos.unwrap();
-            let end = end_pos.unwrap();
-
-            if end - start > 1 {
-                cb(start, end);
-            }
-            start_pos = None;
-            end_pos = None;
-        }
+        result
     }
-}
 
-#[cfg(test)]
-mod tests {
-    use std::time::Instant;
+    fn identify_header(&self, line: &str) -> String {
+        let mut size = 0;
 
-    use crate::parse;
+        let mut chars = line.chars();
+        while chars.next() == Some('#') {
+            size += 1;
+        }
 
-    #[test]
-    fn benchmark() {
-        use pulldown_cmark::{html, Options, Parser};
+        // TODO: If size is more than 6 then it's a <p>
 
-        let now = Instant::now();
+        let line = &line[size + 1..];
+        self.create_tag(&format!("h{}", size), line)
+    }
 
-        let markdown_input = "# ***I'm*** super **C**hunky
+    fn identify_paragraph(&self, line: &str) -> String {
+        // TODO: Merge lines in a single <p> if there was no `\n` between them
+        self.create_tag(&format!("p"), line)
+    }
 
-## _I_'m a `v`ery `big`
-";
+    fn emphasis(&self, line: &str) -> String {
+        let emph = vec![("**", "b"), ("*", "em"), ("_", "em"), ("~~", "del")];
 
-        let mut options = Options::empty();
-        options.insert(Options::ENABLE_STRIKETHROUGH);
-        let parser = Parser::new_ext(markdown_input, options);
+        let mut formatted_line = String::from(line);
 
-        // Write to String buffer.
-        let mut html_output = String::new();
-        html::push_html(&mut html_output, parser);
+        // TODO: multiple pattern matches on the same line causes a conflict in the matching range
+        // EX: He**l**lo Gu**y**s
+        // when inserting <b> like this <b>l</b>
+        // the range index of the second match isn't valid
+        fn format(
+            mut line: String,
+            res: Vec<(usize, usize)>,
+            pattern: &str,
+            tag_name: &str,
+        ) -> String {
+            for (s, e) in res {
+                line = format!(
+                    "{}<{}>{}</{}>{}",
+                    &line[..s - pattern.len()],
+                    tag_name,
+                    &line[s..e],
+                    tag_name,
+                    &line[e + pattern.len()..]
+                );
+            }
 
-        let elapsed = now.elapsed();
+            line
+        }
 
-        println!("Pulldown Parser {:?}", elapsed);
+        for (pattern, tag_name) in emph {
+            let res = self.capture_simple_pattern(&formatted_line, pattern);
+            formatted_line = format(formatted_line, res, pattern, tag_name);
+        }
 
-        //
+        formatted_line
+    }
 
-        let now2 = Instant::now();
+    // Pattern
+    fn capture_pattern(
+        &self,
+        line: &str,
+        start_pattern: &str,
+        end_pattern: &str,
+    ) -> Vec<(usize, usize)> {
+        let mut captured = vec![];
 
-        let res = parse(markdown_input);
+        let chars = line.chars();
 
-        let elapsed2 = now2.elapsed();
+        let mut start_pos = None;
+        let mut end_pos = None;
+        let mut matches = 0;
 
-        println!("Mine {:?}", elapsed2);
+        let start_pattern = start_pattern.as_bytes();
+        let end_pattern = end_pattern.as_bytes();
 
-        let diff = elapsed.as_micros() / elapsed2.as_micros();
+        for (idx, e) in chars.enumerate() {
+            let current_pattern = if start_pos.is_none() {
+                start_pattern
+            } else {
+                end_pattern
+            };
 
-        println!("Faster by {} times!", diff);
-        assert!(diff > 3);
+            if matches == current_pattern.len() {
+                if start_pos.is_some() {
+                    end_pos = Some(idx - start_pattern.len());
+                } else {
+                    start_pos = Some(idx);
+                }
+
+                matches = 0;
+            }
+
+            if e == current_pattern[matches] as char {
+                matches += 1;
+            } else {
+                matches = 0;
+            }
+
+            if start_pos.is_some() && end_pos.is_some() {
+                if start_pos.unwrap() - end_pos.unwrap() > 1 {
+                    captured.push((start_pos.unwrap(), end_pos.unwrap()));
+                }
+                start_pos = None;
+                end_pos = None;
+            }
+        }
+
+        captured
+    }
+
+    fn capture_simple_pattern(&self, line: &str, pattern: &str) -> Vec<(usize, usize)> {
+        self.capture_pattern(line, pattern, pattern)
+    }
+
+    fn create_tag(&self, tag: &str, content: &str) -> String {
+        format!("<{}>{}</{}>", tag, self.emphasis(content), tag)
     }
 }
