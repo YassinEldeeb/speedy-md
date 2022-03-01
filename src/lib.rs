@@ -1,8 +1,6 @@
-pub struct Parser {}
+use std::vec;
 
-// Remember to check this out when implementing merging <p> tags
-// And catching blockquotes
-// https://www.google.com/search?q=how+to+skip+the+next+3+iterations+of+a+loop+in+rust&client=firefox-b-d&channel=trow5&sxsrf=APq-WBuGqOp0npRLcHpjdEfkOjmCYm8Z5g%3A1646140375716&ei=1xseYt-eK5P8sAeLnLWIAQ&ved=0ahUKEwif5uDi_qT2AhUTPuwKHQtODREQ4dUDCA0&uact=5&oq=how+to+skip+the+next+3+iterations+of+a+loop+in+rust&gs_lcp=Cgdnd3Mtd2l6EAMyBAghEBU6BwgAEEcQsANKBAhBGABKBAhGGABQvgdYvQpgmQtoA3ABeACAAbcBiAH3A5IBAzAuM5gBAKABAcgBCMABAQ&sclient=gws-wiz
+pub struct Parser {}
 
 impl Parser {
     pub fn new() -> Self {
@@ -12,7 +10,7 @@ impl Parser {
     pub fn get_html(&self, content: String) -> String {
         let mut result = String::new();
 
-        let lines: Vec<&str> = content.lines().map(|l| l.trim()).collect();
+        let lines: Vec<&str> = content.lines().collect();
         let mut skip = 0;
 
         for (idx, line) in lines.iter().enumerate() {
@@ -24,7 +22,6 @@ impl Parser {
                 result.push_str(&self.identify_header(line));
             } else if line.starts_with(">") {
                 result.push_str(&self.identify_blockquote(idx, &lines, &mut skip));
-            } else if line.is_empty() {
             } else {
                 result.push_str(&self.identify_paragraph(line));
             }
@@ -74,7 +71,13 @@ impl Parser {
     }
 
     fn emphasis(&self, line: &str) -> String {
-        let emph = vec![("**", "b"), ("*", "em"), ("_", "em"), ("~~", "del")];
+        let emph = vec![
+            ("**", "b"),
+            ("*", "em"),
+            ("_", "em"),
+            ("`", "code"),
+            ("~~", "del"),
+        ];
 
         let mut formatted_line = String::from(line);
 
@@ -133,13 +136,13 @@ impl Parser {
 
         for (pattern, tag_name) in emph {
             let res = self.capture_simple_pattern(&formatted_line, pattern);
+
             formatted_line = format(formatted_line, res, pattern, tag_name);
         }
 
         formatted_line
     }
 
-    // Pattern
     fn capture_pattern(
         &self,
         line: &str,
@@ -185,7 +188,7 @@ impl Parser {
             }
 
             if start_pos.is_some() && end_pos.is_some() {
-                if end_pos.unwrap() - start_pos.unwrap() > 1 {
+                if end_pos.unwrap() - start_pos.unwrap() >= 1 {
                     captured.push((start_pos.unwrap(), end_pos.unwrap()));
                 }
                 start_pos = None;
@@ -201,6 +204,10 @@ impl Parser {
     }
 
     fn create_tag(&self, tag: &str, content: &str) -> String {
-        format!("<{}>{}</{}>", tag, self.emphasis(content.trim()), tag)
+        if content.is_empty() {
+            String::new()
+        } else {
+            format!("<{}>{}</{}>", tag, self.emphasis(content.trim()), tag)
+        }
     }
 }
