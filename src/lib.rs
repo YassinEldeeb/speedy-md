@@ -117,7 +117,8 @@ impl Parser {
             // (17, 22)
 
             // Solution
-            // "<tag></tag>".len() - identifier.len()
+            // "<tag></tag>".len() - identifier.len() * 2
+
             for (s, e) in res {
                 line = format!(
                     "{}<{}>{}</{}>{}",
@@ -128,7 +129,8 @@ impl Parser {
                     &line[e + offset + pattern.len()..]
                 );
 
-                offset += 2 + tag_name.len() * 2 + 3 - pattern.len();
+                // "<>".len() + "del".len() * 2 + "</>".len() - "`".len() * 2
+                offset += 2 + (tag_name.len() * 2) + 3 - pattern.len() * 2;
             }
 
             line
@@ -209,5 +211,39 @@ impl Parser {
         } else {
             format!("<{}>{}</{}>", tag, self.emphasis(content.trim()), tag)
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn capture_simple_pattern() {
+        let parser = Parser::new();
+
+        let captured = parser.capture_simple_pattern("*&This is a simple line*& *&l*&", "*&");
+
+        assert_eq!(captured, vec![(2, 23), (28, 29)]);
+    }
+
+    #[test]
+    fn capture_simple_pattern() {
+        let parser = Parser::new();
+
+        let captured = parser.capture_simple_pattern("*&This is a simple line*& *&l*&", "*&");
+        assert_eq!(captured, vec![(2, 23), (28, 29)]);
+
+        let captured = parser.capture_simple_pattern("``Th`is `is`a si`mp`le line``", "*&");
+        assert_eq!(captured, vec![(2, 23), (28, 29)]);
+    }
+
+    #[test]
+    fn create_tag() {
+        let parser = Parser::new();
+
+        let tag = parser.create_tag("code", "console.log(\"Hello\")");
+
+        assert_eq!(tag, String::from("<code>console.log(\"Hello\")</code>"));
     }
 }
