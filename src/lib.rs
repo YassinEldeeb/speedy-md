@@ -12,15 +12,42 @@ impl Parser {
     pub fn get_html(&self, content: String) -> String {
         let mut result = String::new();
 
-        let lines = content.lines().map(|l| l.trim());
-        for line in lines {
-            if line.starts_with("#") {
+        let lines: Vec<&str> = content.lines().map(|l| l.trim()).collect();
+        let mut skip = 0;
+
+        for (idx, line) in lines.iter().enumerate() {
+            if skip > 0 {
+                continue;
+            }
+
+            if line.starts_with("# ") {
                 result.push_str(&self.identify_header(line));
+            } else if line.starts_with(">") {
+                result.push_str(&self.identify_blockquote(idx, &lines, &mut skip));
             } else if line.is_empty() {
             } else {
                 result.push_str(&self.identify_paragraph(line));
             }
         }
+
+        result
+    }
+
+    fn identify_blockquote(&self, current_idx: usize, lines: &Vec<&str>, skip: &mut i32) -> String {
+        let mut index = current_idx;
+        let mut result = String::from("<blockquote>");
+
+        // Parse multiple lines blockquotes
+        while index < lines.len() {
+            let line = lines[index];
+            if line.starts_with(">") {
+                result.push_str(&self.create_tag("p", &line[1..]));
+            }
+            index += 1;
+            *skip += 1;
+        }
+
+        result.push_str("</blockquote>");
 
         result
     }
@@ -33,9 +60,11 @@ impl Parser {
             size += 1;
         }
 
-        // TODO: If size is more than 6 then it's a <p>
+        if size > 6 {
+            return self.identify_paragraph(line);
+        }
 
-        let line = &line[size + 1..];
+        let line = &line[size..];
         self.create_tag(&format!("h{}", size), line)
     }
 
@@ -172,6 +201,6 @@ impl Parser {
     }
 
     fn create_tag(&self, tag: &str, content: &str) -> String {
-        format!("<{}>{}</{}>", tag, self.emphasis(content), tag)
+        format!("<{}>{}</{}>", tag, self.emphasis(content.trim()), tag)
     }
 }
