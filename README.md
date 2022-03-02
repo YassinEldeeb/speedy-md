@@ -1,6 +1,6 @@
 # Speedy MD
 
-![Logo](https://github.com/YassinEldeeb/speedy-md/blob/main/images/new-logo.png)
+![Logo](https://github.com/YassinEldeeb/speedy-md/blob/main/images/logo.png)
 
 ### Features
 
