@@ -56,81 +56,87 @@ fn bench() {
     let paths = fs::read_dir("./benchmarks").unwrap();
     let mut timestamps = vec![];
 
-    for path in paths {
-        let timestamp: u128 = path
-            .unwrap()
-            .path()
-            .as_os_str()
-            .to_str()
-            .unwrap()
-            .split("\\")
-            .collect::<Vec<&str>>()[1]
-            .replace(".json", "")
-            .parse()
-            .unwrap();
+    let is_ci = ci_info::is_ci();
 
-        timestamps.push(timestamp);
-    }
+    // Only write results if not running in CI
+    if is_ci {
+        for path in paths {
+            let timestamp: u128 = path
+                .unwrap()
+                .path()
+                .as_os_str()
+                .to_str()
+                .unwrap()
+                .split("\\")
+                .collect::<Vec<&str>>()[1]
+                .replace(".json", "")
+                .parse()
+                .unwrap();
 
-    timestamps.sort();
-
-    // Cleanup old benchmarks
-    if timestamps.len() >= 2 {
-        // Execlude the last bench file
-        for i in &timestamps[..timestamps.len() - 1] {
-            fs::remove_file(format!("./benchmarks/{}.json", i))
-                .expect("Couldn't remove the last benchmark");
+            timestamps.push(timestamp);
         }
-    }
 
-    let improvement = {
-        if timestamps.len() >= 1 {
-            let last_bench_path = format!("./benchmarks/{}.json", timestamps[timestamps.len() - 1]);
+        timestamps.sort();
 
-            if Path::new(&last_bench_path).exists() {
-                let last_bench: serde_json::Value =
-                    serde_json::from_str(&fs::read_to_string(&last_bench_path).unwrap())
-                        .expect("JSON was not well-formatted");
+        // Cleanup old benchmarks
+        if timestamps.len() >= 2 {
+            // Execlude the last bench file
+            for i in &timestamps[..timestamps.len() - 1] {
+                fs::remove_file(format!("./benchmarks/{}.json", i))
+                    .expect("Couldn't remove the last benchmark");
+            }
+        }
 
-                let percentage = (average - last_bench.get("average").unwrap().as_f64().unwrap())
-                    / average
-                    * 100.0;
+        let improvement = {
+            if timestamps.len() >= 1 {
+                let last_bench_path =
+                    format!("./benchmarks/{}.json", timestamps[timestamps.len() - 1]);
 
-                if percentage < 1.5 {
-                    format!("{}%", 0)
+                if Path::new(&last_bench_path).exists() {
+                    let last_bench: serde_json::Value =
+                        serde_json::from_str(&fs::read_to_string(&last_bench_path).unwrap())
+                            .expect("JSON was not well-formatted");
+
+                    let percentage =
+                        (average - last_bench.get("average").unwrap().as_f64().unwrap()) / average
+                            * 100.0;
+
+                    if percentage < 1.5 {
+                        format!("{}%", 0)
+                    } else {
+                        format!("{:.2}%", -percentage)
+                    }
                 } else {
-                    format!("{:.2}%", -percentage)
+                    String::from("0%")
                 }
             } else {
                 String::from("0%")
             }
-        } else {
-            String::from("0%")
-        }
-    };
+        };
 
-    let bench = Bench {
-        improvement,
-        info: BenchInfo {
-            measurement_unit: String::from("ms"),
-            no_of_lines: content.lines().collect::<Vec<&str>>().len(),
-            content_size_in_bytes: content.bytes().len(),
-        },
-        average,
-        max,
-        min,
-        iterations: results
-            .iter()
-            .map(|(idx, micros)| Iteration {
-                index: *idx,
-                ms: *micros as f64 / 1000.0,
-            })
-            .collect(),
-        num_of_iterations,
-    };
+        let bench = Bench {
+            improvement,
+            info: BenchInfo {
+                measurement_unit: String::from("ms"),
+                no_of_lines: content.lines().collect::<Vec<&str>>().len(),
+                content_size_in_bytes: content.bytes().len(),
+            },
+            average,
+            max,
+            min,
+            iterations: results
+                .iter()
+                .map(|(idx, micros)| Iteration {
+                    index: *idx,
+                    ms: *micros as f64 / 1000.0,
+                })
+                .collect(),
+            num_of_iterations,
+        };
 
-    let json = serde_json::to_string_pretty(&bench).unwrap();
-    let path = format!("./benchmarks/{}.json", utils::get_unix_timestamp_us());
+        let json = serde_json::to_string_pretty(&bench).unwrap();
+        let path = format!("./benchmarks/{}.json", utils::get_unix_timestamp_us());
 
-    fs::write(path, json).unwrap();
+        fs::write(path, json).unwrap();
+    }
 }
