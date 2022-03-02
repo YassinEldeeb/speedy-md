@@ -1,9 +1,11 @@
 use std::vec;
 
+#[derive(PartialEq)]
 enum Type {
     Header,
     BlockQuote,
     Paragraph,
+    LineBreak,
 }
 pub struct Parser {}
 
@@ -16,33 +18,26 @@ impl Parser {
         let mut result = String::new();
 
         let lines: Vec<&str> = content.lines().collect();
+        let mut skip = 0_u32;
 
-        for &line in lines.iter() {
-            let parsed = self.parse(line, &mut result);
+        for (idx, &line) in lines.iter().enumerate() {
+            if skip > 0 {
+                skip -= 1;
+                continue;
+            }
+            let parsed = self.parse(line, idx, &lines, &mut skip);
             result.push_str(&parsed);
         }
 
         result
     }
 
-    fn parse(&self, line: &str, result: &mut String) -> String {
+    fn parse(&self, line: &str, index: usize, lines: &Vec<&str>, skip: &mut u32) -> String {
         match self.identify_line(line) {
-            Type::Header => self.parse_header(line, result),
-            Type::BlockQuote => self.parse_blockquote(line, result),
-            Type::Paragraph => self.parse_paragraph(line, result),
-        }
-    }
-
-    fn parse_blockquote(&self, line: &str, result: &mut String) -> String {
-        let closed_blockquote_tag = "</blockquote>";
-        let line = line[1..].trim_start();
-
-        if result.ends_with(closed_blockquote_tag) {
-            result.drain(result.len() - closed_blockquote_tag.len()..);
-
-            format!("{}</blockquote>", self.parse(line, result))
-        } else {
-            self.create_tag("blockquote", &self.parse(line, result))
+            Type::Header => self.parse_header(index, &lines, skip),
+            Type::BlockQuote => self.parse_blockquote(index, lines, skip),
+            Type::Paragraph => self.parse_paragraph(index, lines, skip),
+            Type::LineBreak => String::new(),
         }
     }
 
@@ -51,12 +46,54 @@ impl Parser {
             Type::Header
         } else if line.starts_with('>') {
             Type::BlockQuote
+        } else if line.is_empty() {
+            Type::LineBreak
         } else {
             Type::Paragraph
         }
     }
 
-    fn parse_header(&self, line: &str, result: &mut String) -> String {
+    fn parse_blockquote(&self, current_index: usize, lines: &Vec<&str>, skip: &mut u32) -> String {
+        let mut index = current_index;
+        let mut result = String::from("<blockquote>");
+
+        // Parse sequential blockquotes lines
+        while index < lines.len() {
+            let line = lines[index];
+
+            if self.identify_line(line) == Type::BlockQuote && !line.is_empty() {
+                index += 1;
+            } else {
+                break;
+            }
+        }
+
+        let mut skip_inner = 0;
+        let diff = index - current_index;
+        for i in 0..diff {
+            if skip_inner > 0 {
+                skip_inner -= 1;
+                continue;
+            }
+
+            let new_lines: Vec<&str> = lines[current_index..current_index + diff]
+                .iter()
+                .map(|&l| l[1..].trim_start())
+                .collect();
+
+            result.push_str(&self.parse(new_lines[i], i, &new_lines, &mut skip_inner));
+        }
+
+        result.push_str("</blockquote>");
+
+        // Skip the lines we checked above
+        *skip += (index - current_index - 1) as u32;
+
+        result
+    }
+
+    fn parse_header(&self, index: usize, lines: &Vec<&str>, skip: &mut u32) -> String {
+        let line = lines[index];
         let mut size = 0;
 
         let mut chars = line.chars();
@@ -68,22 +105,49 @@ impl Parser {
         // #Hello -> "H" 👎
         let space_separator = &line[size..size + 1];
         if size > 6 || space_separator != " " {
-            return self.parse_paragraph(line, result);
+            return self.parse_paragraph(index, lines, skip);
         }
 
         let line = &line[size..];
         self.create_tag(&format!("h{}", size), line)
     }
 
-    fn parse_paragraph(&self, line: &str, result: &mut String) -> String {
-        let closed_p_tag = "</p>";
-        if result.ends_with(closed_p_tag) && !line.is_empty() {
-            result.drain(result.len() - closed_p_tag.len()..);
+    fn parse_paragraph(&self, current_index: usize, lines: &Vec<&str>, skip: &mut u32) -> String {
+        let mut index = current_index;
+        let mut result = String::from("<p>");
 
-            format!(" {}</p>", line)
-        } else {
-            self.create_tag("p", line)
+        // Parse sequential paragraph lines
+        while index < lines.len() {
+            let line = lines[index];
+
+            if self.identify_line(line) == Type::Paragraph && !line.is_empty() {
+                let is_not_first_iter = result.len() == 3;
+
+                // if result has already a paragraph line and
+                // the previous line doesn't end with a "  "
+                // then: Push an empty space to seperate the two lines
+                if !is_not_first_iter && !lines[index - 1].ends_with("  ") {
+                    result.push(' ');
+                }
+
+                result.push_str(line.trim());
+
+                if line.ends_with("  ") {
+                    result.push_str("<br>")
+                }
+
+                index += 1;
+            } else {
+                break;
+            }
         }
+
+        result.push_str("</p>");
+
+        // Skip the lines we checked above
+        *skip += (index - current_index - 1) as u32;
+
+        result
     }
 
     fn emphasis(&self, line: &str) -> String {
@@ -219,16 +283,9 @@ impl Parser {
 
     fn create_tag(&self, tag: &str, content: &str) -> String {
         if content.is_empty() {
-            // Push an empty space so that backward inspection
-            // can detect where is a linebreak between lines
-            String::from(" ")
+            String::new()
         } else {
-            let tag_value = if content.ends_with("  ") {
-                self.emphasis(content.trim()) + "<br>"
-            } else {
-                self.emphasis(content.trim())
-            };
-            format!("<{}>{}</{}>", tag, tag_value, tag)
+            format!("<{}>{}</{}>", tag, self.emphasis(content.trim()), tag)
         }
     }
 }
