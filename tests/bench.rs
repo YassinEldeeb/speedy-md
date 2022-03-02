@@ -92,14 +92,15 @@ fn bench() {
                     serde_json::from_str(&fs::read_to_string(&last_bench_path).unwrap())
                         .expect("JSON was not well-formatted");
 
-                let mut percentage =
-                    (average - last_bench.get("average").unwrap().as_f64().unwrap()) / average
-                        * 100.0;
+                let percentage = (average - last_bench.get("average").unwrap().as_f64().unwrap())
+                    / average
+                    * 100.0;
 
                 if percentage < 1.5 {
-                    percentage = 0.0;
+                    format!("{}%", 0)
+                } else {
+                    format!("{:.2}%", -percentage)
                 }
-                format!("{}%", percentage)
             } else {
                 String::from("0%")
             }
