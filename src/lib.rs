@@ -1,5 +1,10 @@
 use std::vec;
 
+enum Type {
+    Header,
+    BlockQuote,
+    Paragraph,
+}
 pub struct Parser {}
 
 impl Parser {
@@ -12,37 +17,46 @@ impl Parser {
 
         let lines: Vec<&str> = content.lines().collect();
 
-        for (idx, line) in lines.iter().enumerate() {
-            if line.starts_with("#") {
-                let header = &self.identify_header(line, &mut result);
-                result.push_str(header);
-            } else if line.starts_with(">") {
-                let blockquote = &self.identify_blockquote(line, &mut result);
-                result.push_str(blockquote);
-            } else {
-                let paragraph = &self.identify_paragraph(line, &mut result);
-
-                result.push_str(paragraph);
-            }
+        for &line in lines.iter() {
+            let parsed = self.parse(line, &mut result);
+            result.push_str(&parsed);
         }
 
         result
     }
 
-    fn identify_blockquote(&self, line: &str, result: &mut String) -> String {
+    fn parse(&self, line: &str, result: &mut String) -> String {
+        match self.identify_line(line) {
+            Type::Header => self.parse_header(line, result),
+            Type::BlockQuote => self.parse_blockquote(line, result),
+            Type::Paragraph => self.parse_paragraph(line, result),
+        }
+    }
+
+    fn parse_blockquote(&self, line: &str, result: &mut String) -> String {
         let closed_blockquote_tag = "</blockquote>";
         let line = line[1..].trim_start();
 
         if result.ends_with(closed_blockquote_tag) {
             result.drain(result.len() - closed_blockquote_tag.len()..);
 
-            format!("{}</blockquote>", self.identify_paragraph(line, result))
+            format!("{}</blockquote>", self.parse(line, result))
         } else {
-            self.create_tag("blockquote", &self.identify_paragraph(line, result))
+            self.create_tag("blockquote", &self.parse(line, result))
         }
     }
 
-    fn identify_header(&self, line: &str, result: &mut String) -> String {
+    fn identify_line(&self, line: &str) -> Type {
+        if line.starts_with("#") {
+            Type::Header
+        } else if line.starts_with(">") {
+            Type::BlockQuote
+        } else {
+            Type::Paragraph
+        }
+    }
+
+    fn parse_header(&self, line: &str, result: &mut String) -> String {
         let mut size = 0;
 
         let mut chars = line.chars();
@@ -54,14 +68,14 @@ impl Parser {
         // #Hello -> "H" 👎
         let space_separator = &line[size..size + 1];
         if size > 6 || space_separator != " " {
-            return self.identify_paragraph(line, result);
+            return self.parse_paragraph(line, result);
         }
 
         let line = &line[size..];
         self.create_tag(&format!("h{}", size), line)
     }
 
-    fn identify_paragraph(&self, line: &str, result: &mut String) -> String {
+    fn parse_paragraph(&self, line: &str, result: &mut String) -> String {
         let closed_p_tag = "</p>";
         if result.ends_with(closed_p_tag) && !line.is_empty() {
             result.drain(result.len() - closed_p_tag.len()..);
@@ -228,11 +242,11 @@ mod tests {
         let parser = Parser::new();
         let mut result = String::new();
 
-        let blackquote = parser.identify_blockquote("> Yassin Said", &mut result);
+        let blackquote = parser.parse_blockquote("> Yassin Said", &mut result);
         result.push_str(&blackquote);
-        let blackquote = parser.identify_blockquote(">", &mut result);
+        let blackquote = parser.parse_blockquote(">", &mut result);
         result.push_str(&blackquote);
-        let blackquote = parser.identify_blockquote("> That he's so dumb", &mut result);
+        let blackquote = parser.parse_blockquote("> That he's so dumb", &mut result);
         result.push_str(&blackquote);
 
         assert_eq!(
@@ -246,10 +260,10 @@ mod tests {
         let mut result = String::new();
         let parser = Parser::new();
 
-        let header = parser.identify_header("# Hey", &mut result);
+        let header = parser.parse_header("# Hey", &mut result);
         assert_eq!(header, "<h1>Hey</h1>");
 
-        let header = parser.identify_header("##### Hola!", &mut result);
+        let header = parser.parse_header("##### Hola!", &mut result);
         assert_eq!(header, "<h5>Hola!</h5>");
     }
 
@@ -258,22 +272,22 @@ mod tests {
         let mut result = String::new();
         let parser = Parser::new();
 
-        let paragraph = parser.identify_paragraph("  Hello World  ", &mut result);
+        let paragraph = parser.parse_paragraph("  Hello World  ", &mut result);
         result.push_str(&paragraph);
 
         assert_eq!(paragraph, "<p>Hello World<br></p>");
 
-        let paragraph = parser.identify_paragraph("I'm Yassin", &mut result);
+        let paragraph = parser.parse_paragraph("I'm Yassin", &mut result);
 
         result.push_str(&paragraph);
         assert_eq!(paragraph, " I'm Yassin</p>");
 
         assert_eq!(result, "<p>Hello World<br> I'm Yassin</p>");
 
-        let paragraph = parser.identify_paragraph("", &mut result);
+        let paragraph = parser.parse_paragraph("", &mut result);
         result.push_str(&paragraph);
 
-        let paragraph = parser.identify_paragraph("#Hello World", &mut result);
+        let paragraph = parser.parse_paragraph("#Hello World", &mut result);
         result.push_str(&paragraph);
 
         assert_eq!(
