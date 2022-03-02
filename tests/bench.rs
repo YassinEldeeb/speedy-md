@@ -59,7 +59,7 @@ fn bench() {
     let is_ci = ci_info::is_ci();
 
     // Only write results if not running in CI
-    if is_ci {
+    if !is_ci {
         for path in paths {
             let timestamp: u128 = path
                 .unwrap()
