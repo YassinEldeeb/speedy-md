@@ -1,5 +1,5 @@
 # Speedy MD
-[![github actions](https://github.com/YassinEldeeb/speedy-md/workflows/Tests/badge.svg)](https://github.com/YassinEldeeb/speedy-md/actions)
+![github actions](https://github.com/YassinEldeeb/speedy-md/actions/workflows/Tests.yml/badge.svg)
 
 
 ![Logo](https://github.com/YassinEldeeb/speedy-md/blob/main/images/small-logo.png)
