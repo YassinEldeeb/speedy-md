@@ -81,10 +81,6 @@ impl Parser {
 
         let mut formatted_line = String::from(line);
 
-        // DONE: multiple pattern matches on the same line causes a conflict in the matching range
-        // EX: He**l**lo Gu**y**s
-        // when inserting <b> like this <b>l</b>
-        // the range index of the second match isn't valid
         fn format(
             mut line: String,
             res: Vec<(usize, usize)>,

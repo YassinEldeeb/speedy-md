@@ -1,9 +1,11 @@
 use serde::{Deserialize, Serialize};
 use speedy_md::Parser;
-use std::{fs, time::Instant};
+use std::{fs, path::Path, time::Instant};
+mod utils;
 
 #[derive(Serialize, Deserialize, Debug)]
 struct Bench<'a> {
+    improvement: String,
     measurement_unit: &'a str,
     average: f64,
     max: f64,
@@ -45,7 +47,63 @@ fn bench() {
     let min = min as f64 / 1000.0;
     let max = max as f64 / 1000.0;
 
+    let paths = fs::read_dir("./benchmarks").unwrap();
+    let mut timestamps = vec![];
+
+    for path in paths {
+        let timestamp: u128 = path
+            .unwrap()
+            .path()
+            .as_os_str()
+            .to_str()
+            .unwrap()
+            .split("\\")
+            .collect::<Vec<&str>>()[1]
+            .replace(".json", "")
+            .parse()
+            .unwrap();
+
+        timestamps.push(timestamp);
+    }
+
+    timestamps.sort();
+
+    // Cleanup old benchmarks
+    if timestamps.len() >= 2 {
+        // Execlude the last bench file
+        for i in &timestamps[..timestamps.len() - 1] {
+            fs::remove_file(format!("./benchmarks/{}.json", i))
+                .expect("Couldn't remove the last benchmark");
+        }
+    }
+
+    let improvement = {
+        if timestamps.len() >= 1 {
+            let last_bench_path = format!("./benchmarks/{}.json", timestamps[timestamps.len() - 1]);
+
+            if Path::new(&last_bench_path).exists() {
+                let last_bench: serde_json::Value =
+                    serde_json::from_str(&fs::read_to_string(&last_bench_path).unwrap())
+                        .expect("JSON was not well-formatted");
+
+                let mut percentage =
+                    (average - last_bench.get("average").unwrap().as_f64().unwrap()) / average
+                        * 100.0;
+
+                if percentage < 1.5 {
+                    percentage = 0.0;
+                }
+                format!("{}%", percentage)
+            } else {
+                String::from("0%")
+            }
+        } else {
+            String::from("0%")
+        }
+    };
+
     let bench = Bench {
+        improvement,
         measurement_unit: "ms",
         average,
         max,
@@ -61,6 +119,7 @@ fn bench() {
     };
 
     let json = serde_json::to_string(&bench).unwrap();
+    let path = format!("./benchmarks/{}.json", utils::get_unix_timestamp_us());
 
-    fs::write("./bench.json", json).unwrap();
+    fs::write(path, json).unwrap();
 }
