@@ -270,8 +270,16 @@ mod tests {
 
         assert_eq!(result, "<p>Hello World<br> I'm Yassin</p>");
 
+        let paragraph = parser.identify_paragraph("", &mut result);
+        result.push_str(&paragraph);
+
         let paragraph = parser.identify_paragraph("#Hello World", &mut result);
-        assert_eq!(paragraph, "<p>#Hello World</p>");
+        result.push_str(&paragraph);
+
+        assert_eq!(
+            result,
+            "<p>Hello World<br> I'm Yassin</p> <p>#Hello World</p>"
+        );
     }
 
     #[test]
