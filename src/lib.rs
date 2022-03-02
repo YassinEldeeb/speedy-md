@@ -47,9 +47,9 @@ impl Parser {
     }
 
     fn identify_line(&self, line: &str) -> Type {
-        if line.starts_with("#") {
+        if line.starts_with('#') {
             Type::Header
-        } else if line.starts_with(">") {
+        } else if line.starts_with('>') {
             Type::BlockQuote
         } else {
             Type::Paragraph
@@ -82,7 +82,7 @@ impl Parser {
 
             format!(" {}</p>", line)
         } else {
-            self.create_tag(&format!("p"), line)
+            self.create_tag("p", line)
         }
     }
 
