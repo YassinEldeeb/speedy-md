@@ -4,9 +4,15 @@ use std::{fs, path::Path, time::Instant};
 mod utils;
 
 #[derive(Serialize, Deserialize, Debug)]
-struct Bench<'a> {
+struct BenchInfo {
+    measurement_unit: String,
+    no_of_lines: usize,
+    content_size_in_bytes: usize,
+}
+#[derive(Serialize, Deserialize, Debug)]
+struct Bench {
     improvement: String,
-    measurement_unit: &'a str,
+    info: BenchInfo,
     average: f64,
     max: f64,
     min: f64,
@@ -104,7 +110,11 @@ fn bench() {
 
     let bench = Bench {
         improvement,
-        measurement_unit: "ms",
+        info: BenchInfo {
+            measurement_unit: String::from("ms"),
+            no_of_lines: content.lines().collect::<Vec<&str>>().len(),
+            content_size_in_bytes: content.bytes().len(),
+        },
         average,
         max,
         min,
