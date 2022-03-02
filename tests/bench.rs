@@ -118,7 +118,7 @@ fn bench() {
         num_of_iterations,
     };
 
-    let json = serde_json::to_string(&bench).unwrap();
+    let json = serde_json::to_string_pretty(&bench).unwrap();
     let path = format!("./benchmarks/{}.json", utils::get_unix_timestamp_us());
 
     fs::write(path, json).unwrap();
