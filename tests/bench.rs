@@ -1,10 +1,11 @@
 use serde::{Deserialize, Serialize};
-use speedy_md::Parser;
 use std::{fs, path::Path, time::Instant};
 mod utils;
+use speedy_md::Parser;
 
 #[derive(Serialize, Deserialize, Debug)]
 struct BenchInfo {
+    parser: String,
     measurement_unit: String,
     no_of_lines: usize,
     content_size_in_bytes: usize,
@@ -27,6 +28,7 @@ struct Iteration {
 }
 #[test]
 fn bench() {
+    let parser_name = String::from("speedy-md");
     let parser = Parser::new();
 
     let content =
@@ -38,6 +40,7 @@ fn bench() {
     for i in 0..num_of_iterations {
         let now = Instant::now();
         let res = parser.get_html(&content);
+
         let elapsed = now.elapsed();
 
         results.push((i, elapsed.as_micros()));
@@ -79,7 +82,7 @@ fn bench() {
         timestamps.sort();
 
         // Cleanup old benchmarks
-        if timestamps.len() >= 2 {
+        if timestamps.len() >= 10 {
             // Execlude the last bench file
             for i in &timestamps[..timestamps.len() - 1] {
                 fs::remove_file(format!("./benchmarks/{}.json", i))
@@ -87,6 +90,7 @@ fn bench() {
             }
         }
 
+        let mut perc = 0.0;
         let improvement = {
             if timestamps.len() >= 1 {
                 let last_bench_path =
@@ -101,6 +105,7 @@ fn bench() {
                         (average - last_bench.get("average").unwrap().as_f64().unwrap()) / average
                             * 100.0;
 
+                    perc = -percentage;
                     // Threshold = 1.5%
                     if percentage < 1.5 && percentage > -1.5 {
                         format!("{}%", 0)
@@ -122,6 +127,7 @@ fn bench() {
         let bench = Bench {
             improvement,
             info: BenchInfo {
+                parser: parser_name,
                 measurement_unit: String::from("ms"),
                 no_of_lines: content.lines().collect::<Vec<&str>>().len(),
                 content_size_in_bytes: content.bytes().len(),
@@ -143,5 +149,11 @@ fn bench() {
         let path = format!("./benchmarks/{}.json", utils::get_unix_timestamp_us());
 
         fs::write(path, json).unwrap();
+
+        // If the speed is down by 5% than the last bench,
+        // Then It's a failure!
+        if perc < -5.0 {
+            panic!("That's really  slow!");
+        }
     }
 }

@@ -1,4 +1,4 @@
-use std::vec;
+use std::{thread, time::Duration, vec};
 
 #[derive(PartialEq)]
 enum Type {
@@ -34,7 +34,7 @@ impl Parser {
 
     fn parse(&self, line: &str, index: usize, lines: &Vec<&str>, skip: &mut u32) -> String {
         match self.identify_line(line) {
-            Type::Header => self.parse_header(index, &lines, skip),
+            Type::Header => self.parse_header(line),
             Type::BlockQuote => self.parse_blockquote(index, lines, skip),
             Type::Paragraph => self.parse_paragraph(index, lines, skip),
             Type::LineBreak => String::new(),
@@ -42,7 +42,21 @@ impl Parser {
     }
 
     fn identify_line(&self, line: &str) -> Type {
-        if line.starts_with('#') {
+        if line.starts_with("#") {
+            let mut size = 0;
+
+            let mut chars = line.chars();
+            while chars.next() == Some('#') {
+                size += 1;
+            }
+
+            // # Hello -> <h1> 👌
+            // #Hello -> <p> 👎
+            let space_separator = &line[size..size + 1];
+            if size > 6 || space_separator != " " {
+                return Type::Paragraph;
+            }
+
             Type::Header
         } else if line.starts_with('>') {
             Type::BlockQuote
@@ -92,20 +106,12 @@ impl Parser {
         result
     }
 
-    fn parse_header(&self, index: usize, lines: &Vec<&str>, skip: &mut u32) -> String {
-        let line = lines[index];
+    fn parse_header(&self, line: &str) -> String {
         let mut size = 0;
-
         let mut chars = line.chars();
+
         while chars.next() == Some('#') {
             size += 1;
-        }
-
-        // # Hello -> " " 👌
-        // #Hello -> "H" 👎
-        let space_separator = &line[size..size + 1];
-        if size > 6 || space_separator != " " {
-            return self.parse_paragraph(index, lines, skip);
         }
 
         let line = &line[size..];
@@ -150,6 +156,8 @@ impl Parser {
         result
     }
 
+    // !Use this carefully, expensive function
+    // !Try to skip it if possible
     fn emphasis(&self, line: &str) -> String {
         let emph = vec![
             ("**", "b"),
@@ -169,31 +177,12 @@ impl Parser {
         ) -> String {
             let mut offset = 0;
 
-            // # Logic!
-
-            // He**l**lo **Y**
-            // (4, 5)
-            // (12, 13)
-            // He<b>l</b>lo **Y**
-            // (12 + 3, 13 + 3)
-            // (15, 16)
-
-            // *I'*m *super*
-            // (1, 3)
-            // (7, 12)
-            // <em>I'</em>m *super*
-            // (7 + 7, 12 + 7)
-            // (14, 19)
-
-            // ~~I'~~m ~~super~~
-            // (2, 4)
-            // (10, 15)
-            // <del>I'</del>m ~~super~~
-            // (10 + 7, 15 + 7)
-            // (17, 22)
-
-            // Solution
-            // "<tag></tag>".len() - identifier.len() * 2
+            // !Problem:
+            // when replacing the identifiers with the corresponding tags
+            // the boundaries get messed up
+            // ?Solution:
+            // Add offset to the boundaries based on previous operations
+            // offset = "<tag></tag>".len() - identifier.len() * 2
 
             for (s, e) in res {
                 line = format!(
@@ -213,6 +202,10 @@ impl Parser {
         }
 
         for (pattern, tag_name) in emph {
+            if !line.contains(pattern) {
+                continue;
+            }
+
             let res = self.capture_simple_pattern(&formatted_line, pattern);
 
             formatted_line = format(formatted_line, res, pattern, tag_name);
@@ -221,6 +214,8 @@ impl Parser {
         formatted_line
     }
 
+    // !Use this carefully, expensive function
+    // !Try to skip it if possible
     fn capture_pattern(
         &self,
         line: &str,
@@ -228,6 +223,10 @@ impl Parser {
         end_pattern: &str,
     ) -> Vec<(usize, usize)> {
         let mut captured = vec![];
+
+        if !line.contains(start_pattern) {
+            return captured;
+        }
 
         let chars = line.chars();
 
@@ -278,6 +277,8 @@ impl Parser {
         captured
     }
 
+    // !Use this carefully, expensive function
+    // !Try to skip it if possible
     fn capture_simple_pattern(&self, line: &str, pattern: &str) -> Vec<(usize, usize)> {
         self.capture_pattern(line, pattern, pattern)
     }
@@ -298,60 +299,67 @@ mod tests {
     #[test]
     fn blackquote() {
         let parser = Parser::new();
-        let mut result = String::new();
+        let mut skip = 0;
 
-        let blackquote = parser.parse_blockquote("> Yassin Said", &mut result);
-        result.push_str(&blackquote);
-        let blackquote = parser.parse_blockquote(">", &mut result);
-        result.push_str(&blackquote);
-        let blackquote = parser.parse_blockquote("> That he's so dumb", &mut result);
-        result.push_str(&blackquote);
+        let blackquote = parser.parse_blockquote(
+            0,
+            &vec!["> Yassin Said", ">", "> That he's so dumb"],
+            &mut skip,
+        );
 
+        assert_eq!(skip, 2);
         assert_eq!(
-            result,
-            "<blockquote><p>Yassin Said</p> <p>That he's so dumb</p></blockquote>"
+            blackquote,
+            "<blockquote><p>Yassin Said</p><p>That he's so dumb</p></blockquote>"
+        );
+
+        let mut skip = 0;
+        let blackquote =
+            parser.parse_blockquote(0, &vec!["> Yassin Said", "> That he's so dumb"], &mut skip);
+
+        assert_eq!(skip, 1);
+        assert_eq!(
+            blackquote,
+            "<blockquote><p>Yassin Said That he's so dumb</p></blockquote>"
         );
     }
 
     #[test]
     fn header() {
-        let mut result = String::new();
         let parser = Parser::new();
 
-        let header = parser.parse_header("# Hey", &mut result);
+        let header = parser.parse_header("# Hey");
         assert_eq!(header, "<h1>Hey</h1>");
 
-        let header = parser.parse_header("##### Hola!", &mut result);
-        assert_eq!(header, "<h5>Hola!</h5>");
+        let header = parser.parse_header("#### Hey");
+        assert_eq!(header, "<h4>Hey</h4>");
+
+        let header = parser.parse_header("#### Hey");
+        assert_eq!(header, "<h6>Hey</h6>");
+
+        let header = parser.parse_header("## Hey");
+        assert_eq!(header, "<h2>Hey</h2>");
     }
 
     #[test]
     fn paragraph() {
-        let mut result = String::new();
         let parser = Parser::new();
 
-        let paragraph = parser.parse_paragraph("  Hello World  ", &mut result);
-        result.push_str(&paragraph);
-
+        let mut skip = 0;
+        let paragraph = parser.parse_paragraph(0, &vec!["  Hello World  "], &mut skip);
         assert_eq!(paragraph, "<p>Hello World<br></p>");
 
-        let paragraph = parser.parse_paragraph("I'm Yassin", &mut result);
+        let mut skip = 0;
+        let paragraph = parser.parse_paragraph(0, &vec!["I'm Yassin", "", "WoW"], &mut skip);
+        assert_eq!(paragraph, "<p>I'm Yassin</p>");
 
-        result.push_str(&paragraph);
-        assert_eq!(paragraph, " I'm Yassin</p>");
+        let mut skip = 0;
+        let paragraph = parser.parse_paragraph(2, &vec!["I'm Yassin", "", "WoW"], &mut skip);
+        assert_eq!(paragraph, "<p>WoW</p>");
 
-        assert_eq!(result, "<p>Hello World<br> I'm Yassin</p>");
-
-        let paragraph = parser.parse_paragraph("", &mut result);
-        result.push_str(&paragraph);
-
-        let paragraph = parser.parse_paragraph("#Hello World", &mut result);
-        result.push_str(&paragraph);
-
-        assert_eq!(
-            result,
-            "<p>Hello World<br> I'm Yassin</p> <p>#Hello World</p>"
-        );
+        let mut skip = 0;
+        let paragraph = parser.parse_paragraph(0, &vec!["#Hello", "World"], &mut skip);
+        assert_eq!(paragraph, "<p>#Hello World</p>");
     }
 
     #[test]
@@ -410,7 +418,9 @@ mod tests {
         let parser = Parser::new();
 
         let tag = parser.create_tag("code", "console.log(\"Hello\")");
-
         assert_eq!(tag, String::from("<code>console.log(\"Hello\")</code>"));
+
+        let tag = parser.create_tag("b", "  ~~H~~ello ");
+        assert_eq!(tag, String::from("<b><del>H</del>ello</b>"));
     }
 }
