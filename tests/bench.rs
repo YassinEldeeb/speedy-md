@@ -41,7 +41,7 @@ fn bench() {
     loop {
         unsafe {
             if failed && RETRIES_LEFT == 0 {
-                panic!("That's really  slow!");
+                panic!("That's really slow!");
             } else if RETRIES_LEFT <= 4 {
                 println!("Retring..");
             }
@@ -75,7 +75,8 @@ fn bench() {
         let min = min as f64 / 1000.0;
         let max = max as f64 / 1000.0;
 
-        let paths = fs::read_dir("./benchmarks").unwrap();
+        // TODO: fix path for github actions to be able to read it.
+        let paths = fs::read_dir("benchmarks").unwrap();
         let mut timestamps = vec![];
 
         let is_ci = ci_info::is_ci();
