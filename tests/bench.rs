@@ -33,11 +33,11 @@ fn bench() {
         fs::read_to_string("./tests/fixtures/bench.md").expect("`./bench.md` has been deleted!");
 
     let mut results = vec![];
-    let num_of_iterations = 100;
+    let num_of_iterations = 50;
 
     for i in 0..num_of_iterations {
         let now = Instant::now();
-        let _ = parser.get_html(content.clone());
+        let res = parser.get_html(&content);
         let elapsed = now.elapsed();
 
         results.push((i, elapsed.as_micros()));
@@ -95,16 +95,21 @@ fn bench() {
                 if Path::new(&last_bench_path).exists() {
                     let last_bench: serde_json::Value =
                         serde_json::from_str(&fs::read_to_string(&last_bench_path).unwrap())
-                            .expect("JSON was not well-formatted");
+                            .expect("JSON was not well-formatted!");
 
                     let percentage =
                         (average - last_bench.get("average").unwrap().as_f64().unwrap()) / average
                             * 100.0;
 
-                    if percentage < 1.5 {
+                    // Threshold = 1.5%
+                    if percentage < 1.5 && percentage > -1.5 {
                         format!("{}%", 0)
                     } else {
-                        format!("{:.2}%", -percentage)
+                        format!(
+                            "{}{:.2}%",
+                            if -percentage > 0.0 { "+" } else { "" },
+                            -percentage
+                        )
                     }
                 } else {
                     String::from("0%")

@@ -7,7 +7,7 @@ fn main() {
     let now = Instant::now();
     let parser = Parser::new();
 
-    let res = parser.get_html(content);
+    let res = parser.get_html(&content);
 
     let elapsed = now.elapsed();
 

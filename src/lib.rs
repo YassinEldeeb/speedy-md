@@ -14,7 +14,7 @@ impl Parser {
         Parser {}
     }
 
-    pub fn get_html(&self, content: String) -> String {
+    pub fn get_html(&self, content: &str) -> String {
         let mut result = String::new();
 
         let lines: Vec<&str> = content.lines().collect();
