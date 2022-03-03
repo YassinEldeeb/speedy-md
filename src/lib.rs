@@ -334,7 +334,7 @@ mod tests {
         let header = parser.parse_header("#### Hey");
         assert_eq!(header, "<h4>Hey</h4>");
 
-        let header = parser.parse_header("#### Hey");
+        let header = parser.parse_header("###### Hey");
         assert_eq!(header, "<h6>Hey</h6>");
 
         let header = parser.parse_header("## Hey");

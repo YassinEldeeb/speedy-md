@@ -150,9 +150,9 @@ fn bench() {
 
         fs::write(path, json).unwrap();
 
-        // If the speed is down by 5% than the last bench,
+        // If the speed is down by 10% than the last bench,
         // Then It's a failure!
-        if perc < -5.0 {
+        if perc < -10.0 {
             panic!("That's really  slow!");
         }
     }
