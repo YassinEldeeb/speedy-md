@@ -181,6 +181,7 @@ fn bench() {
 
                 // Only write bench file if in the last try
                 if RETRIES_LEFT == 0 {
+                    println!("Average: {}", average);
                     write_bench_file(&bench, is_ci)
                 }
             }
