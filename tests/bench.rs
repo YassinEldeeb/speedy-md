@@ -75,7 +75,6 @@ fn bench() {
         let min = min as f64 / 1000.0;
         let max = max as f64 / 1000.0;
 
-        // TODO: fix path for github actions to be able to read it.
         let paths = fs::read_dir("benchmarks").unwrap();
         let mut timestamps = vec![];
 
@@ -87,7 +86,7 @@ fn bench() {
                 .path()
                 .to_str()
                 .unwrap()
-                .split("\\")
+                .split(std::path::MAIN_SEPARATOR)
                 .collect::<Vec<&str>>()[1]
                 .replace(".json", "")
                 .parse()
