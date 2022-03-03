@@ -164,11 +164,13 @@ fn bench() {
 
         fn write_bench_file(bench: &Bench, is_ci: bool) {
             // Only write results if not running in CI
+            let json = serde_json::to_string_pretty(&bench).unwrap();
             if !is_ci {
-                let json = serde_json::to_string_pretty(&bench).unwrap();
                 let path = format!("./benchmarks/{}.json", utils::get_unix_timestamp_us());
 
                 fs::write(path, json).unwrap();
+            } else {
+                println!("{:#?}", json);
             }
         }
 
@@ -181,7 +183,6 @@ fn bench() {
 
                 // Only write bench file if in the last try
                 if RETRIES_LEFT == 0 {
-                    println!("Average: {}", average);
                     write_bench_file(&bench, is_ci)
                 }
             }
