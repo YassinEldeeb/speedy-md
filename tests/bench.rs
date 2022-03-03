@@ -82,11 +82,9 @@ fn bench() {
         let is_ci = ci_info::is_ci();
 
         for path in paths {
-            println!("{:?}", path);
             let timestamp: u128 = path
                 .unwrap()
                 .path()
-                .as_os_str()
                 .to_str()
                 .unwrap()
                 .split("\\")
