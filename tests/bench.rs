@@ -77,12 +77,12 @@ fn bench() {
 
         // TODO: fix path for github actions to be able to read it.
         let paths = fs::read_dir("benchmarks").unwrap();
-        println!("{:#?}", fs::read_dir(".").unwrap());
         let mut timestamps = vec![];
 
         let is_ci = ci_info::is_ci();
 
         for path in paths {
+            println!("{:?}", path);
             let timestamp: u128 = path
                 .unwrap()
                 .path()
