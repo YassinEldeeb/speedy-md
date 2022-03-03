@@ -266,7 +266,8 @@ impl Parser {
             }
 
             if start_pos.is_some() && end_pos.is_some() {
-                if end_pos.unwrap() - start_pos.unwrap() >= 1 {
+                let (start_pos_val, end_pos_val) = (start_pos.unwrap(), end_pos.unwrap());
+                if end_pos_val - start_pos_val >= 1 {
                     captured.push((start_pos.unwrap(), end_pos.unwrap()));
                 }
                 start_pos = None;
