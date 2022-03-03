@@ -80,117 +80,114 @@ fn bench() {
 
         let is_ci = ci_info::is_ci();
 
-        // Only write results if not running in CI
-        if !is_ci {
-            for path in paths {
-                let timestamp: u128 = path
-                    .unwrap()
-                    .path()
-                    .as_os_str()
-                    .to_str()
-                    .unwrap()
-                    .split("\\")
-                    .collect::<Vec<&str>>()[1]
-                    .replace(".json", "")
-                    .parse()
-                    .unwrap();
+        for path in paths {
+            let timestamp: u128 = path
+                .unwrap()
+                .path()
+                .as_os_str()
+                .to_str()
+                .unwrap()
+                .split("\\")
+                .collect::<Vec<&str>>()[1]
+                .replace(".json", "")
+                .parse()
+                .unwrap();
 
-                timestamps.push(timestamp);
+            timestamps.push(timestamp);
+        }
+
+        timestamps.sort();
+
+        // Cleanup old benchmarks
+        if timestamps.len() >= 10 {
+            // Execlude the last bench file
+            for i in &timestamps[..timestamps.len() - 1] {
+                fs::remove_file(format!("./benchmarks/{}.json", i))
+                    .expect("Couldn't remove the last benchmark");
             }
+        }
 
-            timestamps.sort();
+        let mut perc = 0.0;
+        let improvement = {
+            if timestamps.len() >= 1 {
+                let last_bench_path =
+                    format!("./benchmarks/{}.json", timestamps[timestamps.len() - 1]);
 
-            // Cleanup old benchmarks
-            if timestamps.len() >= 10 {
-                // Execlude the last bench file
-                for i in &timestamps[..timestamps.len() - 1] {
-                    fs::remove_file(format!("./benchmarks/{}.json", i))
-                        .expect("Couldn't remove the last benchmark");
-                }
-            }
+                if Path::new(&last_bench_path).exists() {
+                    let last_bench: serde_json::Value =
+                        serde_json::from_str(&fs::read_to_string(&last_bench_path).unwrap())
+                            .expect("JSON was not well-formatted!");
 
-            let mut perc = 0.0;
-            let improvement = {
-                if timestamps.len() >= 1 {
-                    let last_bench_path =
-                        format!("./benchmarks/{}.json", timestamps[timestamps.len() - 1]);
-
-                    if Path::new(&last_bench_path).exists() {
-                        let last_bench: serde_json::Value =
-                            serde_json::from_str(&fs::read_to_string(&last_bench_path).unwrap())
-                                .expect("JSON was not well-formatted!");
-
-                        // TODO: Calculate the Loss Percentage correctly
-                        let percentage = (average
-                            - last_bench.get("average").unwrap().as_f64().unwrap())
-                            / average
+                    // TODO: Calculate the Loss Percentage correctly
+                    let percentage =
+                        (average - last_bench.get("average").unwrap().as_f64().unwrap()) / average
                             * 100.0;
 
-                        perc = -percentage;
-                        // Threshold = 1.5%
-                        if percentage < 1.5 && percentage > -1.5 {
-                            format!("{}%", 0)
-                        } else {
-                            format!(
-                                "{}{:.2}%",
-                                if -percentage > 0.0 { "+" } else { "" },
-                                -percentage
-                            )
-                        }
+                    perc = -percentage;
+                    // Threshold = 1.5%
+                    if percentage < 1.5 && percentage > -1.5 {
+                        format!("{}%", 0)
                     } else {
-                        String::from("0%")
+                        format!(
+                            "{}{:.2}%",
+                            if -percentage > 0.0 { "+" } else { "" },
+                            -percentage
+                        )
                     }
                 } else {
                     String::from("0%")
                 }
-            };
+            } else {
+                String::from("0%")
+            }
+        };
 
-            let bench = Bench {
-                improvement,
-                info: BenchInfo {
-                    parser: parser_name,
-                    measurement_unit: String::from("ms"),
-                    no_of_lines: content.lines().collect::<Vec<&str>>().len(),
-                    content_size_in_bytes: content.bytes().len(),
-                },
-                average,
-                max,
-                min,
-                iterations: results
-                    .iter()
-                    .map(|(idx, micros)| Iteration {
-                        index: *idx,
-                        ms: *micros as f64 / 1000.0,
-                    })
-                    .collect(),
-                num_of_iterations,
-            };
+        let bench = Bench {
+            improvement,
+            info: BenchInfo {
+                parser: parser_name,
+                measurement_unit: String::from("ms"),
+                no_of_lines: content.lines().collect::<Vec<&str>>().len(),
+                content_size_in_bytes: content.bytes().len(),
+            },
+            average,
+            max,
+            min,
+            iterations: results
+                .iter()
+                .map(|(idx, micros)| Iteration {
+                    index: *idx,
+                    ms: *micros as f64 / 1000.0,
+                })
+                .collect(),
+            num_of_iterations,
+        };
 
-            fn write_bench_file(bench: &Bench) {
+        fn write_bench_file(bench: &Bench, is_ci: bool) {
+            // Only write results if not running in CI
+            if !is_ci {
                 let json = serde_json::to_string_pretty(&bench).unwrap();
                 let path = format!("./benchmarks/{}.json", utils::get_unix_timestamp_us());
 
                 fs::write(path, json).unwrap();
             }
+        }
 
-            println!("{}", perc);
+        // If the speed is down by 7% than the last bench,
+        // Then It's a failure!
+        if perc <= -7.0 {
+            failed = true;
+            unsafe {
+                RETRIES_LEFT -= 1;
 
-            // If the speed is down by 7% than the last bench,
-            // Then It's a failure!
-            if perc <= -7.0 {
-                failed = true;
-                unsafe {
-                    RETRIES_LEFT -= 1;
-
-                    // Only write bench file if in the last try
-                    if RETRIES_LEFT == 0 {
-                        write_bench_file(&bench)
-                    }
+                // Only write bench file if in the last try
+                if RETRIES_LEFT == 0 {
+                    write_bench_file(&bench, is_ci)
                 }
-            } else {
-                write_bench_file(&bench);
-                break;
             }
+        } else {
+            write_bench_file(&bench, is_ci);
+            break;
         }
     }
 }
