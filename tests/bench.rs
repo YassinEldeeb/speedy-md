@@ -164,19 +164,19 @@ fn bench() {
 
         fn write_bench_file(bench: &Bench, is_ci: bool) {
             // Only write results if not running in CI
-            let json = serde_json::to_string_pretty(&bench).unwrap();
             if !is_ci {
+                let json = serde_json::to_string_pretty(&bench).unwrap();
                 let path = format!("./benchmarks/{}.json", utils::get_unix_timestamp_us());
 
                 fs::write(path, json).unwrap();
             } else {
-                println!("{:#?}", json);
+                println!("{:#?}", bench);
             }
         }
 
-        // If the speed is down by 7% than the last bench,
+        // If the speed is down by 10% than the last bench,
         // Then It's a failure!
-        if perc <= -7.0 {
+        if perc <= -10.0 {
             failed = true;
             unsafe {
                 RETRIES_LEFT -= 1;
