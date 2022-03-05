@@ -13,5 +13,5 @@ fn main() {
 
     println!("Performance: {:?}", elapsed);
 
-    // println!("{:#?}", res);
+    println!("{:#?}", res);
 }

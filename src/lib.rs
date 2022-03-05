@@ -1,3 +1,5 @@
+use std::time::Instant;
+
 #[derive(PartialEq)]
 enum Type {
     Header(usize),
@@ -27,11 +29,7 @@ impl Parser {
 
         let not_end_of_line = |curr_byte| curr_byte != b'\r' && curr_byte != b'\n';
 
-        loop {
-            if self.position >= bytes.len() {
-                break;
-            }
-
+        while self.position < bytes.len() {
             let curr_byte = bytes[self.position];
 
             match self.identify_curr_char(bytes) {
@@ -67,7 +65,13 @@ impl Parser {
             self.position += 1;
         }
 
-        String::from_utf8(self.bytes_result.take().unwrap()).expect("Invalid UTF-8 Characters")
+        let html = String::from_utf8(self.bytes_result.take().unwrap()).unwrap();
+
+        // Reset values
+        self.bytes_result = Some(Vec::new());
+        self.position = 0;
+
+        html
     }
 
     fn identify_curr_char(&mut self, bytes: &[u8]) -> Type {
