@@ -3,7 +3,7 @@ use std::fs;
 
 #[test]
 fn it_works() {
-    let parser = Parser::new();
+    let mut parser = Parser::new();
 
     let content =
         fs::read_to_string("./tests/fixtures/sample.md").expect("`./sample.md` has been deleted!");

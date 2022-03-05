@@ -47,7 +47,7 @@ fn bench() {
             }
         }
         let parser_name = String::from("speedy-md");
-        let parser = Parser::new();
+        let mut parser = Parser::new();
 
         let content = fs::read_to_string("./tests/fixtures/bench.md")
             .expect("`./bench.md` has been deleted!");
@@ -80,7 +80,7 @@ fn bench() {
 
         let is_ci = ci_info::is_ci();
 
-        for path in paths {
+        paths.for_each(|path| {
             let timestamp: u128 = path
                 .unwrap()
                 .path()
@@ -93,7 +93,7 @@ fn bench() {
                 .unwrap();
 
             timestamps.push(timestamp);
-        }
+        });
 
         timestamps.sort();
 
