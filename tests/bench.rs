@@ -62,6 +62,10 @@ fn bench() {
 
             let elapsed = now.elapsed();
 
+            // if i == num_of_iterations - 1 {
+            //     fs::write("./result.html", res).unwrap();
+            // }
+
             results.push((i, elapsed.as_micros()));
         }
 
