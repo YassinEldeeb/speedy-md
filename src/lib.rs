@@ -9,8 +9,13 @@ enum Type {
     BlockQuote,
     Paragraph,
     LineBreak,
+    Space,
 }
-pub struct Parser {}
+
+pub struct Parser {
+    position: usize,
+    bytes_result: Option<String>,
+}
 
 impl Parser {
     pub fn new() -> Self {
@@ -79,43 +84,38 @@ impl Parser {
         }
     }
 
-    fn parse_blockquote(&self, current_index: usize, lines: &Vec<&str>, skip: &mut u32) -> String {
-        let mut index = current_index;
-        let mut result = String::from("<blockquote>");
+    /// Gives you a tuple containing the start and ending positions of a matching condition
+    /// (start, end)
+    ///
+    /// # Example Output
+    /// ```
+    /// (0, 16)
+    /// ```
+    fn consume_while<T>(&mut self, bytes: &[u8], condition: T) -> (usize, usize)
+    where
+        T: Fn(u8) -> bool,
+    {
+        let start = self.position;
+        let mut end = self.position;
 
-        // Parse sequential blockquotes lines
-        while index < lines.len() {
-            let line = lines[index];
+        loop {
+            if self.position >= bytes.len() {
+                break;
+            }
 
-            if self.identify_line(line) == Type::BlockQuote && !line.is_empty() {
-                index += 1;
+            let next_byte = bytes[self.position];
+
+            // Exit the loop if we faced the end of a line
+            if condition(next_byte) {
+                end += 1;
             } else {
                 break;
             }
+
+            self.position += 1;
         }
 
-        let mut skip_inner = 0;
-        let diff = index - current_index;
-        for i in 0..diff {
-            if skip_inner > 0 {
-                skip_inner -= 1;
-                continue;
-            }
-
-            let new_lines: Vec<&str> = lines[current_index..current_index + diff]
-                .iter()
-                .map(|&l| l[1..].trim_start())
-                .collect();
-
-            result.push_str(&self.parse(new_lines[i], i, &new_lines, &mut skip_inner));
-        }
-
-        result.push_str("</blockquote>");
-
-        // Skip the lines we checked above
-        *skip += (index - current_index - 1) as u32;
-
-        result
+        (start, end)
     }
 
     fn parse_header(&self, line: &str, size: usize) -> String {
