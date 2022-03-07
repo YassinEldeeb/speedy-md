@@ -46,6 +46,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "concat-string"
+version = "1.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7439becb5fafc780b6f4de382b1a7a3e70234afe783854a4702ee8adbb838609"
+
+[[package]]
 name = "dunce"
 version = "1.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -239,9 +245,9 @@ dependencies = [
 name = "speedy-md"
 version = "0.1.0"
 dependencies = [
- "aho-corasick",
  "chrono",
  "ci_info",
+ "concat-string",
  "pulldown-cmark",
  "regex",
  "serde",

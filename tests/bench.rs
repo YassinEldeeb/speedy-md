@@ -47,7 +47,7 @@ fn bench() {
             }
         }
         let parser_name = String::from("speedy-md");
-        let parser = Parser::new();
+        let mut parser = Parser::new();
 
         let content = fs::read_to_string("./tests/fixtures/bench.md")
             .expect("`./bench.md` has been deleted!");
@@ -62,6 +62,9 @@ fn bench() {
 
             let elapsed = now.elapsed();
 
+            if i == num_of_iterations - 1 {
+                fs::write("./result.html", res).unwrap();
+            }
             results.push((i, elapsed.as_micros()));
         }
 
@@ -80,7 +83,7 @@ fn bench() {
 
         let is_ci = ci_info::is_ci();
 
-        for path in paths {
+        paths.for_each(|path| {
             let timestamp: u128 = path
                 .unwrap()
                 .path()
@@ -93,7 +96,7 @@ fn bench() {
                 .unwrap();
 
             timestamps.push(timestamp);
-        }
+        });
 
         timestamps.sort();
 

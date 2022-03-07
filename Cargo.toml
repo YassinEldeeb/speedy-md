@@ -9,7 +9,7 @@ edition = "2021"
 regex = "1"
 pulldown-cmark = "0.9.1"
 threadpool = "1.8.1"
-aho-corasick = "0.7"
+concat-string = "1.0.1"
 
 [dev-dependencies]
 serde = { version = "1.0", features = ["derive"] }
