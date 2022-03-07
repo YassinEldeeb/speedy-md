@@ -1,21 +1,15 @@
 #[macro_use(concat_string)]
 extern crate concat_string;
 
-use std::{io::Read, time::Instant, vec};
-
 #[derive(PartialEq)]
 enum Type {
     Header(usize),
     BlockQuote,
     Paragraph,
     LineBreak,
-    Space,
 }
 
-pub struct Parser {
-    position: usize,
-    bytes_result: Option<String>,
-}
+pub struct Parser {}
 
 impl Parser {
     pub fn new() -> Self {
@@ -84,38 +78,43 @@ impl Parser {
         }
     }
 
-    /// Gives you a tuple containing the start and ending positions of a matching condition
-    /// (start, end)
-    ///
-    /// # Example Output
-    /// ```
-    /// (0, 16)
-    /// ```
-    fn consume_while<T>(&mut self, bytes: &[u8], condition: T) -> (usize, usize)
-    where
-        T: Fn(u8) -> bool,
-    {
-        let start = self.position;
-        let mut end = self.position;
+    fn parse_blockquote(&self, current_index: usize, lines: &Vec<&str>, skip: &mut u32) -> String {
+        let mut index = current_index;
+        let mut result = String::from("<blockquote>");
 
-        loop {
-            if self.position >= bytes.len() {
-                break;
-            }
+        // Parse sequential blockquotes lines
+        while index < lines.len() {
+            let line = lines[index];
 
-            let next_byte = bytes[self.position];
-
-            // Exit the loop if we faced the end of a line
-            if condition(next_byte) {
-                end += 1;
+            if self.identify_line(line) == Type::BlockQuote && !line.is_empty() {
+                index += 1;
             } else {
                 break;
             }
-
-            self.position += 1;
         }
 
-        (start, end)
+        let mut skip_inner = 0;
+        let diff = index - current_index;
+        for i in 0..diff {
+            if skip_inner > 0 {
+                skip_inner -= 1;
+                continue;
+            }
+
+            let new_lines: Vec<&str> = lines[current_index..current_index + diff]
+                .iter()
+                .map(|&l| l[1..].trim_start())
+                .collect();
+
+            result.push_str(&self.parse(new_lines[i], i, &new_lines, &mut skip_inner));
+        }
+
+        result.push_str("</blockquote>");
+
+        // Skip the lines we checked above
+        *skip += (index - current_index - 1) as u32;
+
+        result
     }
 
     fn parse_header(&self, line: &str, size: usize) -> String {
@@ -301,135 +300,135 @@ impl Parser {
     }
 }
 
-// #[cfg(test)]
-// mod tests {
-//     use super::*;
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-//     #[test]
-//     fn blackquote() {
-//         let parser = Parser::new();
-//         let mut skip = 0;
+    #[test]
+    fn blackquote() {
+        let parser = Parser::new();
+        let mut skip = 0;
 
-//         let blackquote = parser.parse_blockquote(
-//             0,
-//             &vec!["> Yassin Said", ">", "> That he's so dumb"],
-//             &mut skip,
-//         );
+        let blackquote = parser.parse_blockquote(
+            0,
+            &vec!["> Yassin Said", ">", "> That he's so dumb"],
+            &mut skip,
+        );
 
-//         assert_eq!(skip, 2);
-//         assert_eq!(
-//             blackquote,
-//             "<blockquote><p>Yassin Said</p><p>That he's so dumb</p></blockquote>"
-//         );
+        assert_eq!(skip, 2);
+        assert_eq!(
+            blackquote,
+            "<blockquote><p>Yassin Said</p><p>That he's so dumb</p></blockquote>"
+        );
 
-//         let mut skip = 0;
-//         let blackquote =
-//             parser.parse_blockquote(0, &vec!["> Yassin Said", "> That he's so dumb"], &mut skip);
+        let mut skip = 0;
+        let blackquote =
+            parser.parse_blockquote(0, &vec!["> Yassin Said", "> That he's so dumb"], &mut skip);
 
-//         assert_eq!(skip, 1);
-//         assert_eq!(
-//             blackquote,
-//             "<blockquote><p>Yassin Said That he's so dumb</p></blockquote>"
-//         );
-//     }
+        assert_eq!(skip, 1);
+        assert_eq!(
+            blackquote,
+            "<blockquote><p>Yassin Said That he's so dumb</p></blockquote>"
+        );
+    }
 
-//     #[test]
-//     fn header() {
-//         let parser = Parser::new();
+    #[test]
+    fn header() {
+        let parser = Parser::new();
 
-//         let header = parser.parse_header("# Hey", 1);
-//         assert_eq!(header, "<h1>Hey</h1>");
+        let header = parser.parse_header("# Hey", 1);
+        assert_eq!(header, "<h1>Hey</h1>");
 
-//         let header = parser.parse_header("#### Hey", 4);
-//         assert_eq!(header, "<h4>Hey</h4>");
+        let header = parser.parse_header("#### Hey", 4);
+        assert_eq!(header, "<h4>Hey</h4>");
 
-//         let header = parser.parse_header("###### Hey", 6);
-//         assert_eq!(header, "<h6>Hey</h6>");
+        let header = parser.parse_header("###### Hey", 6);
+        assert_eq!(header, "<h6>Hey</h6>");
 
-//         let header = parser.parse_header("## Hey", 2);
-//         assert_eq!(header, "<h2>Hey</h2>");
-//     }
+        let header = parser.parse_header("## Hey", 2);
+        assert_eq!(header, "<h2>Hey</h2>");
+    }
 
-//     #[test]
-//     fn paragraph() {
-//         let parser = Parser::new();
+    #[test]
+    fn paragraph() {
+        let parser = Parser::new();
 
-//         let mut skip = 0;
-//         let paragraph = parser.parse_paragraph(0, &vec!["  Hello World  "], &mut skip);
-//         assert_eq!(paragraph, "<p>Hello World<br></p>");
+        let mut skip = 0;
+        let paragraph = parser.parse_paragraph(0, &vec!["  Hello World  "], &mut skip);
+        assert_eq!(paragraph, "<p>Hello World<br></p>");
 
-//         let mut skip = 0;
-//         let paragraph = parser.parse_paragraph(0, &vec!["I'm Yassin", "", "WoW"], &mut skip);
-//         assert_eq!(paragraph, "<p>I'm Yassin</p>");
+        let mut skip = 0;
+        let paragraph = parser.parse_paragraph(0, &vec!["I'm Yassin", "", "WoW"], &mut skip);
+        assert_eq!(paragraph, "<p>I'm Yassin</p>");
 
-//         let mut skip = 0;
-//         let paragraph = parser.parse_paragraph(2, &vec!["I'm Yassin", "", "WoW"], &mut skip);
-//         assert_eq!(paragraph, "<p>WoW</p>");
+        let mut skip = 0;
+        let paragraph = parser.parse_paragraph(2, &vec!["I'm Yassin", "", "WoW"], &mut skip);
+        assert_eq!(paragraph, "<p>WoW</p>");
 
-//         let mut skip = 0;
-//         let paragraph = parser.parse_paragraph(0, &vec!["#Hello", "World"], &mut skip);
-//         assert_eq!(paragraph, "<p>#Hello World</p>");
-//     }
+        let mut skip = 0;
+        let paragraph = parser.parse_paragraph(0, &vec!["#Hello", "World"], &mut skip);
+        assert_eq!(paragraph, "<p>#Hello World</p>");
+    }
 
-//     #[test]
-//     fn emphasis() {
-//         let parser = Parser::new();
+    #[test]
+    fn emphasis() {
+        let parser = Parser::new();
 
-//         let emphasised = parser.emphasis("**H**ello, I'm *Yassin* not ~~Husien~~. I'm a `coder`");
-//         assert_eq!(
-//             emphasised,
-//             "<b>H</b>ello, I'm <em>Yassin</em> not <del>Husien</del>. I'm a <code>coder</code>"
-//         );
+        let emphasised = parser.emphasis("**H**ello, I'm *Yassin* not ~~Husien~~. I'm a `coder`");
+        assert_eq!(
+            emphasised,
+            "<b>H</b>ello, I'm <em>Yassin</em> not <del>Husien</del>. I'm a <code>coder</code>"
+        );
 
-//         let emphasised = parser.emphasis("Can emph las**t**");
-//         assert_eq!(emphasised, "Can emph las<b>t</b>");
+        let emphasised = parser.emphasis("Can emph las**t**");
+        assert_eq!(emphasised, "Can emph las<b>t</b>");
 
-//         let emphasised = parser.emphasis("Can emph ***~~nested~~***");
-//         assert_eq!(emphasised, "Can emph <b><em><del>nested</del></b></em>");
+        let emphasised = parser.emphasis("Can emph ***~~nested~~***");
+        assert_eq!(emphasised, "Can emph <b><em><del>nested</del></b></em>");
 
-//         let emphasised = parser.emphasis("*C*an emph first");
-//         assert_eq!(emphasised, "<em>C</em>an emph first");
-//     }
+        let emphasised = parser.emphasis("*C*an emph first");
+        assert_eq!(emphasised, "<em>C</em>an emph first");
+    }
 
-//     #[test]
-//     fn capture_comlex_pattern() {
-//         let parser = Parser::new();
+    // #[test]
+    // fn capture_comlex_pattern() {
+    //     let parser = Parser::new();
 
-//         let captured = parser.capture_pattern("![link]", "![", "]");
-//         assert_eq!(captured, vec![(2, 6)]);
+    //     let captured = parser.capture_pattern("![link]", "![", "]");
+    //     assert_eq!(captured, vec![(2, 6)]);
 
-//         let captured = parser.capture_pattern("*&<link>~!", "*&<", ">~!");
-//         assert_eq!(captured, vec![(3, 7)]);
+    //     let captured = parser.capture_pattern("*&<link>~!", "*&<", ">~!");
+    //     assert_eq!(captured, vec![(3, 7)]);
 
-//         let captured = parser.capture_pattern("^(special) something ^(or) no^(t)", "^(", ")");
-//         assert_eq!(captured, vec![(2, 9), (23, 25), (31, 32)]);
-//     }
+    //     let captured = parser.capture_pattern("^(special) something ^(or) no^(t)", "^(", ")");
+    //     assert_eq!(captured, vec![(2, 9), (23, 25), (31, 32)]);
+    // }
 
-//     #[test]
-//     fn capture_simple_pattern() {
-//         let parser = Parser::new();
+    // #[test]
+    // fn capture_simple_pattern() {
+    //     let parser = Parser::new();
 
-//         let captured = parser.capture_simple_pattern("*&This is a simple line*& *&l*&", "*&");
-//         assert_eq!(captured, vec![(2, 23), (28, 29)]);
+    //     let captured = parser.capture_simple_pattern("*&This is a simple line*& *&l*&", "*&");
+    //     assert_eq!(captured, vec![(2, 23), (28, 29)]);
 
-//         let captured = parser.capture_simple_pattern("**Th**is **is** a si**mple line**", "**");
-//         assert_eq!(captured, vec![(2, 4), (11, 13), (22, 31)]);
+    //     let captured = parser.capture_simple_pattern("**Th**is **is** a si**mple line**", "**");
+    //     assert_eq!(captured, vec![(2, 4), (11, 13), (22, 31)]);
 
-//         let captured = parser.capture_simple_pattern("Last lette`r`", "`");
-//         assert_eq!(captured, vec![(11, 12)]);
+    //     let captured = parser.capture_simple_pattern("Last lette`r`", "`");
+    //     assert_eq!(captured, vec![(11, 12)]);
 
-//         let captured = parser.capture_simple_pattern("`F`irst letter", "`");
-//         assert_eq!(captured, vec![(1, 2)]);
-//     }
+    //     let captured = parser.capture_simple_pattern("`F`irst letter", "`");
+    //     assert_eq!(captured, vec![(1, 2)]);
+    // }
 
-//     #[test]
-//     fn create_tag() {
-//         let parser = Parser::new();
+    #[test]
+    fn create_tag() {
+        let parser = Parser::new();
 
-//         let tag = parser.create_tag("<code>", "</code>", "console.log(\"Hello\")");
-//         assert_eq!(tag, String::from("<code>console.log(\"Hello\")</code>"));
+        let tag = parser.create_tag("<code>", "</code>", "console.log(\"Hello\")");
+        assert_eq!(tag, String::from("<code>console.log(\"Hello\")</code>"));
 
-//         let tag = parser.create_tag("<p>", "</p>", "  ~~H~~ello ");
-//         assert_eq!(tag, String::from("<p><del>H</del>ello</p>"));
-//     }
-// }
+        let tag = parser.create_tag("<p>", "</p>", "  ~~H~~ello ");
+        assert_eq!(tag, String::from("<p><del>H</del>ello</p>"));
+    }
+}
