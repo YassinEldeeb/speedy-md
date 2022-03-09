@@ -10,7 +10,7 @@ fn main() {
 
     let elapsed = now.elapsed();
 
-    // println!("Performance: {:?}", elapsed);
+    println!("Performance: {:?}", elapsed);
 
     println!("{:#?}", res);
 }
