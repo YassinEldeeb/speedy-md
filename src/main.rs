@@ -1,17 +1,16 @@
-use speedy_md::Parser;
+use speedy_md::Tokenizer;
 use std::{fs, time::Instant};
 
 fn main() {
     let content = fs::read_to_string("dev.md").unwrap();
 
     let now = Instant::now();
-    let mut parser = Parser::new();
 
-    let res = parser.get_html(&content);
+    let res = Tokenizer::new(&content).run();
 
     let elapsed = now.elapsed();
 
-    println!("Performance: {:?}", elapsed);
+    // println!("Performance: {:?}", elapsed);
 
     println!("{:#?}", res);
 }

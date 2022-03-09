@@ -1,61 +1,82 @@
-#[macro_use(concat_string)]
-extern crate concat_string;
+use std::vec;
 
-#[derive(PartialEq)]
 enum Type {
     Header(usize),
-    BlockQuote,
     Paragraph,
-    LineBreak,
+    UnRecognized,
 }
 
-pub struct Parser {}
+#[derive(Debug)]
+pub enum Token<'a> {
+    Header(usize),
+    ClosedHeader(usize),
+    Text(&'a str),
+    Bold,
+    Italic,
+    Code,
+    Paragraph,
+    ClosedParagraph,
+}
 
-impl Parser {
-    pub fn new() -> Self {
-        Parser {}
+#[derive(Debug)]
+pub struct Tokenizer<'a> {
+    position: usize,
+    bytes: &'a [u8],
+    content: &'a str,
+    result: Option<Vec<Token<'a>>>,
+}
+
+impl<'a> Tokenizer<'a> {
+    pub fn new(content: &'a str) -> Self {
+        Tokenizer {
+            content,
+            position: 0,
+            bytes: content.as_bytes(),
+            result: Some(Vec::new()),
+        }
     }
 
-    pub fn get_html(&self, content: &str) -> String {
-        let mut result = String::new();
+    pub fn run(&mut self) -> Vec<Token<'a>> {
+        while self.position < self.bytes.len() {
+            // Consume white spaces before identifying the line
+            self.consume_whitespace();
 
-        let lines: Vec<&str> = content.lines().collect();
-        let mut skip = 0_u32;
+            let tokens = self.tokenize();
 
-        for (idx, &line) in lines.iter().enumerate() {
-            if skip > 0 {
-                skip -= 1;
-                continue;
+            if let Some(tokens) = tokens {
+                for t in tokens {
+                    self.result.as_mut().unwrap().push(t)
+                }
             }
-            let parsed = self.parse(line, idx, &lines, &mut skip);
-            result.push_str(&parsed);
         }
 
-        result
+        self.result.take().unwrap()
     }
 
-    fn parse(&self, line: &str, index: usize, lines: &Vec<&str>, skip: &mut u32) -> String {
-        match self.identify_line(line) {
-            Type::Header(size) => self.parse_header(line, size),
-            Type::BlockQuote => self.parse_blockquote(index, lines, skip),
-            Type::Paragraph => self.parse_paragraph(index, lines, skip),
-            Type::LineBreak => String::new(),
+    fn tokenize(&mut self) -> Option<Vec<Token<'a>>> {
+        match self.identify_byte() {
+            Type::Header(size) => Some(self.tokenize_header(size)),
+            Type::Paragraph => Some(self.tokenize_paragraph()),
+            _ => None,
         }
     }
 
-    fn identify_line(&self, line: &str) -> Type {
-        if line.is_empty() {
-            return Type::LineBreak;
+    /// Identifies the current byte and return a `Token` type
+    /// # Example
+    /// ```
+    /// let token = self.identify_byte();
+    /// ```
+    fn identify_byte(&mut self) -> Type {
+        let curr_byte = self.next_byte();
+
+        if !not_new_line(curr_byte) {
+            return Type::UnRecognized;
         }
 
-        let char_bytes = line.as_bytes();
+        if curr_byte == b'#' {
+            let mut size = 1;
 
-        let first_byte = char_bytes[0];
-
-        if first_byte == b'#' {
-            let mut size = 0;
-
-            while char_bytes[size] == b'#' {
+            while self.seek_next_byte() == b'#' {
                 size += 1;
 
                 if size >= 7 {
@@ -63,372 +84,129 @@ impl Parser {
                 }
             }
 
-            // # Hello -> <h1> 👌
-            // #Hello -> <p> 👎
-            let space_separator = char_bytes[size];
-            if size > 6 || space_separator != b' ' {
-                return Type::Paragraph;
-            }
+            // Go forward `size` - 1 to skip the "###"
+            self.go_forward(size - 1);
 
             Type::Header(size)
-        } else if first_byte == b'>' {
-            Type::BlockQuote
         } else {
+            // Go back 1 to get the first char we checked
+            self.go_back(1);
+
             Type::Paragraph
         }
     }
 
-    fn parse_blockquote(&self, current_index: usize, lines: &Vec<&str>, skip: &mut u32) -> String {
-        let mut index = current_index;
-        let mut result = String::from("<blockquote>");
+    fn tokenize_header(&mut self, size: usize) -> Vec<Token<'a>> {
+        if size >= 7 || self.next_byte() != b' ' {
+            self.go_back(size);
 
-        // Parse sequential blockquotes lines
-        while index < lines.len() {
-            let line = lines[index];
-
-            if self.identify_line(line) == Type::BlockQuote && !line.is_empty() {
-                index += 1;
-            } else {
-                break;
-            }
-        }
-
-        let mut skip_inner = 0;
-        let diff = index - current_index;
-        for i in 0..diff {
-            if skip_inner > 0 {
-                skip_inner -= 1;
-                continue;
-            }
-
-            let new_lines: Vec<&str> = lines[current_index..current_index + diff]
-                .iter()
-                .map(|&l| l[1..].trim_start())
-                .collect();
-
-            result.push_str(&self.parse(new_lines[i], i, &new_lines, &mut skip_inner));
-        }
-
-        result.push_str("</blockquote>");
-
-        // Skip the lines we checked above
-        *skip += (index - current_index - 1) as u32;
-
-        result
-    }
-
-    fn parse_header(&self, line: &str, size: usize) -> String {
-        let headers = ["<h1>", "<h2>", "<h3>", "<h4>", "<h5>", "<h6>"];
-        let closing_headers = ["</h1>", "</h2>", "</h3>", "</h4>", "</h5>", "</h6>"];
-
-        let line = &line[size..];
-        let header_index = size - 1;
-        self.create_tag(headers[header_index], closing_headers[header_index], line)
-    }
-
-    fn parse_paragraph(&self, current_index: usize, lines: &Vec<&str>, skip: &mut u32) -> String {
-        let mut index = current_index;
-        let mut result = String::from("<p>");
-
-        // Parse sequential paragraph lines
-        while index < lines.len() {
-            let line = lines[index];
-
-            if self.identify_line(line) == Type::Paragraph && !line.is_empty() {
-                let is_not_first_iter = result.len() == 3;
-
-                // if result has already a paragraph line and
-                // the previous line doesn't end with a "  "
-                // then: Push an empty space to seperate the two lines
-                if !is_not_first_iter && !lines[index - 1].ends_with("  ") {
-                    result.push(' ');
-                }
-
-                result.push_str(line.trim());
-
-                if line.ends_with("  ") {
-                    result.push_str("<br>")
-                }
-
-                index += 1;
-            } else {
-                break;
-            }
-        }
-
-        result.push_str("</p>");
-
-        // Skip the lines we checked above
-        *skip += (index - current_index - 1) as u32;
-
-        result
-    }
-
-    fn emphasis(&self, line: &str) -> String {
-        let mut offset = 0;
-
-        let emph = [
-            ("**", "<strong>", "</strong>"),
-            ("*", "<em>", "</em>"),
-            // ("_", "<em>", "</em>"),
-            ("`", "<code>", "</code>"),
-            // ("~~", "<del>", "</del>"),
-        ];
-
-        // for (patt, tag, closing_tag) in emph {
-        //     if line.find(patt).is_none() {
-        //         continue;
-        //     }
-
-        // }
-
-        // let chars = line.as_bytes();
-
-        // // Chain an empty character so that the last iteration can run to
-        // // catch matches at the end of a line.
-
-        // let mut start_pos = None;
-        // let mut end_pos = None;
-        // let mut matches = 0;
-
-        // let start_pattern = start_pattern.as_bytes();
-        // let end_pattern = end_pattern.as_bytes();
-
-        // for (idx, &e) in chars.iter().enumerate() {
-        //     let current_pattern = if start_pos.is_none() {
-        //         start_pattern
-        //     } else {
-        //         end_pattern
-        //     };
-
-        //     if matches == current_pattern.len() {
-        //         if start_pos.is_some() {
-        //             end_pos = Some(idx - end_pattern.len());
-        //         } else {
-        //             start_pos = Some(idx);
-        //         }
-
-        //         matches = 0;
-        //     }
-
-        //     if e == current_pattern[matches] {
-        //         matches += 1;
-        //     } else {
-        //         matches = 0;
-        //     }
-
-        //     if start_pos.is_some() && end_pos.is_some() {
-        //         let (start_pos_val, end_pos_val) = (start_pos.unwrap(), end_pos.unwrap());
-        //         if end_pos_val - start_pos_val >= 1 {
-        //             cb((start_pos.unwrap(), end_pos.unwrap()));
-        //         }
-        //         start_pos = None;
-        //         end_pos = None;
-        //     }
-        // }
-
-        "".to_string()
-    }
-
-    fn capture_pattern<F>(&self, line: &str, start_pattern: &str, end_pattern: &str, mut cb: F)
-    where
-        F: FnMut((usize, usize)),
-    {
-        if line.find(start_pattern).is_none() {
-            return;
-        }
-
-        let chars = line.as_bytes();
-
-        // Chain an empty character so that the last iteration can run to
-        // catch matches at the end of a line.
-
-        let mut start_pos = None;
-        let mut end_pos = None;
-        let mut matches = 0;
-
-        let start_pattern = start_pattern.as_bytes();
-        let end_pattern = end_pattern.as_bytes();
-
-        for (idx, &e) in chars.iter().enumerate() {
-            let current_pattern = if start_pos.is_none() {
-                start_pattern
-            } else {
-                end_pattern
-            };
-
-            if matches == current_pattern.len() {
-                if start_pos.is_some() {
-                    end_pos = Some(idx - end_pattern.len());
-                } else {
-                    start_pos = Some(idx);
-                }
-
-                matches = 0;
-            }
-
-            if e == current_pattern[matches] {
-                matches += 1;
-            } else {
-                matches = 0;
-            }
-
-            if start_pos.is_some() && end_pos.is_some() {
-                let (start_pos_val, end_pos_val) = (start_pos.unwrap(), end_pos.unwrap());
-                if end_pos_val - start_pos_val >= 1 {
-                    cb((start_pos.unwrap(), end_pos.unwrap()));
-                }
-                start_pos = None;
-                end_pos = None;
-            }
-        }
-    }
-
-    fn capture_simple_pattern<F>(&self, line: &str, pattern: &str, cb: F)
-    where
-        F: FnMut((usize, usize)),
-    {
-        self.capture_pattern(line, pattern, pattern, cb)
-    }
-
-    fn create_tag(&self, tag: &str, closing_tag: &str, content: &str) -> String {
-        if content.is_empty() {
-            String::new()
+            self.tokenize_paragraph()
         } else {
-            concat_string!(tag, content.trim(), closing_tag)
+            self.consume_whitespace();
+
+            vec![
+                Token::Header(size),
+                Token::Text(self.consume_while_return_str(not_new_line)),
+                Token::ClosedHeader(size),
+            ]
         }
+    }
+
+    fn tokenize_paragraph(&mut self) -> Vec<Token<'a>> {
+        vec![
+            Token::Paragraph,
+            Token::Text(self.consume_while_return_str(not_new_line)),
+            Token::ClosedParagraph,
+        ]
+    }
+
+    /// Consumes all leading whitespaces
+    /// # Example
+    /// ```
+    /// self.consume_whitespace();
+    /// ```
+    fn consume_whitespace(&mut self) {
+        self.consume_while(|byte| byte == b' ');
+    }
+
+    /// Consumes all bytes
+    /// # Example
+    /// ```
+    /// self.consume_whitespace();
+    /// ```
+    fn consume_while<F>(&mut self, condition: F) -> (usize, usize)
+    where
+        F: Fn(u8) -> bool,
+    {
+        let start = self.position;
+
+        while self.position < self.bytes.len() {
+            if !condition(self.next_byte()) {
+                self.go_back(1);
+                break;
+            }
+        }
+
+        (start, self.position)
+    }
+
+    /// Consumes all bytes
+    /// # Example
+    /// ```
+    /// self.consume_whitespace();
+    /// ```
+    fn consume_while_return_str<F>(&mut self, condition: F) -> &'a str
+    where
+        F: Fn(u8) -> bool,
+    {
+        let (s, e) = self.consume_while(condition);
+
+        &self.content[s..e]
+    }
+
+    /// Get the next byte while also incrementing the position of the tokenizer
+    /// # Example
+    /// ```
+    /// let next_byte = self.next_byte();
+    /// ```
+    fn next_byte(&mut self) -> u8 {
+        let byte = self.bytes[self.position];
+        self.go_forward(1);
+
+        byte
+    }
+
+    fn go_back(&mut self, num: usize) {
+        self.position -= num;
+    }
+
+    fn go_forward(&mut self, num: usize) {
+        self.position += num;
+    }
+
+    /// Get the next byte without changing the position of the tokenizer
+    /// # Example
+    /// ```
+    /// let next_byte = self.seek_next_byte();
+    /// ```
+    fn seek_next_byte(&mut self) -> u8 {
+        let byte = self.bytes[self.position];
+
+        byte
+    }
+
+    /// Get the last byte without changing the position of the tokenizer
+    /// # Example
+    /// ```
+    /// let last_byte = self.last_byte();
+    /// ```
+    fn last_byte(&mut self) -> u8 {
+        let byte = self.bytes[self.position - 1];
+
+        byte
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn blackquote() {
-        let parser = Parser::new();
-        let mut skip = 0;
-
-        let blackquote = parser.parse_blockquote(
-            0,
-            &vec!["> Yassin Said", ">", "> That he's so dumb"],
-            &mut skip,
-        );
-
-        assert_eq!(skip, 2);
-        assert_eq!(
-            blackquote,
-            "<blockquote><p>Yassin Said</p><p>That he's so dumb</p></blockquote>"
-        );
-
-        let mut skip = 0;
-        let blackquote =
-            parser.parse_blockquote(0, &vec!["> Yassin Said", "> That he's so dumb"], &mut skip);
-
-        assert_eq!(skip, 1);
-        assert_eq!(
-            blackquote,
-            "<blockquote><p>Yassin Said That he's so dumb</p></blockquote>"
-        );
-    }
-
-    #[test]
-    fn header() {
-        let parser = Parser::new();
-
-        let header = parser.parse_header("# Hey", 1);
-        assert_eq!(header, "<h1>Hey</h1>");
-
-        let header = parser.parse_header("#### Hey", 4);
-        assert_eq!(header, "<h4>Hey</h4>");
-
-        let header = parser.parse_header("###### Hey", 6);
-        assert_eq!(header, "<h6>Hey</h6>");
-
-        let header = parser.parse_header("## Hey", 2);
-        assert_eq!(header, "<h2>Hey</h2>");
-    }
-
-    #[test]
-    fn paragraph() {
-        let parser = Parser::new();
-
-        let mut skip = 0;
-        let paragraph = parser.parse_paragraph(0, &vec!["  Hello World  "], &mut skip);
-        assert_eq!(paragraph, "<p>Hello World<br></p>");
-
-        let mut skip = 0;
-        let paragraph = parser.parse_paragraph(0, &vec!["I'm Yassin", "", "WoW"], &mut skip);
-        assert_eq!(paragraph, "<p>I'm Yassin</p>");
-
-        let mut skip = 0;
-        let paragraph = parser.parse_paragraph(2, &vec!["I'm Yassin", "", "WoW"], &mut skip);
-        assert_eq!(paragraph, "<p>WoW</p>");
-
-        let mut skip = 0;
-        let paragraph = parser.parse_paragraph(0, &vec!["#Hello", "World"], &mut skip);
-        assert_eq!(paragraph, "<p>#Hello World</p>");
-    }
-
-    #[test]
-    fn emphasis() {
-        let parser = Parser::new();
-
-        let emphasised = parser.emphasis("**H**ello, I'm *Yassin* not ~~Husien~~. I'm a `coder`");
-        assert_eq!(
-            emphasised,
-            "<b>H</b>ello, I'm <em>Yassin</em> not <del>Husien</del>. I'm a <code>coder</code>"
-        );
-
-        let emphasised = parser.emphasis("Can emph las**t**");
-        assert_eq!(emphasised, "Can emph las<b>t</b>");
-
-        let emphasised = parser.emphasis("Can emph ***~~nested~~***");
-        assert_eq!(emphasised, "Can emph <b><em><del>nested</del></b></em>");
-
-        let emphasised = parser.emphasis("*C*an emph first");
-        assert_eq!(emphasised, "<em>C</em>an emph first");
-    }
-
-    // #[test]
-    // fn capture_comlex_pattern() {
-    //     let parser = Parser::new();
-
-    //     let captured = parser.capture_pattern("![link]", "![", "]");
-    //     assert_eq!(captured, vec![(2, 6)]);
-
-    //     let captured = parser.capture_pattern("*&<link>~!", "*&<", ">~!");
-    //     assert_eq!(captured, vec![(3, 7)]);
-
-    //     let captured = parser.capture_pattern("^(special) something ^(or) no^(t)", "^(", ")");
-    //     assert_eq!(captured, vec![(2, 9), (23, 25), (31, 32)]);
-    // }
-
-    // #[test]
-    // fn capture_simple_pattern() {
-    //     let parser = Parser::new();
-
-    //     let captured = parser.capture_simple_pattern("*&This is a simple line*& *&l*&", "*&");
-    //     assert_eq!(captured, vec![(2, 23), (28, 29)]);
-
-    //     let captured = parser.capture_simple_pattern("**Th**is **is** a si**mple line**", "**");
-    //     assert_eq!(captured, vec![(2, 4), (11, 13), (22, 31)]);
-
-    //     let captured = parser.capture_simple_pattern("Last lette`r`", "`");
-    //     assert_eq!(captured, vec![(11, 12)]);
-
-    //     let captured = parser.capture_simple_pattern("`F`irst letter", "`");
-    //     assert_eq!(captured, vec![(1, 2)]);
-    // }
-
-    #[test]
-    fn create_tag() {
-        let parser = Parser::new();
-
-        let tag = parser.create_tag("<code>", "</code>", "console.log(\"Hello\")");
-        assert_eq!(tag, String::from("<code>console.log(\"Hello\")</code>"));
-
-        let tag = parser.create_tag("<p>", "</p>", "  ~~H~~ello ");
-        assert_eq!(tag, String::from("<p><del>H</del>ello</p>"));
-    }
+fn not_new_line(b: u8) -> bool {
+    b != b'\n' && b != b'\r'
 }
