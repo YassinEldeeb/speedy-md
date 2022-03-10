@@ -1,7 +1,7 @@
 mod utils;
 use utils::*;
 
-use std::vec;
+use std::{borrow::Borrow, vec};
 
 #[derive(Debug)]
 enum Type<'a> {
@@ -10,9 +10,7 @@ enum Type<'a> {
     Blockquote,
     OrderedList,
     UnorderedList,
-    Li,
     Link { label: &'a str, url: &'a str },
-    LineBreak,
     HorizontalRule,
     UnRecognized,
 }
@@ -25,9 +23,6 @@ pub enum Token<'a> {
     Link { label: &'a str, url: &'a str },
     LineBreak,
     LineSeparator,
-    Bold,
-    Italic,
-    Code,
     Paragraph,
     ClosedParagraph,
     Blockquote,
@@ -38,6 +33,13 @@ pub enum Token<'a> {
     ClosedUnorderedList,
     Li,
     ClosedLi,
+    // Emphasis
+    Bold,
+    ClosedBold,
+    Italic,
+    ClosedItalic,
+    Code,
+    ClosedCode,
 }
 
 #[derive(Debug)]
@@ -59,7 +61,7 @@ impl<'a> Tokenizer<'a> {
     }
 
     pub fn run(&mut self) -> Vec<Token<'a>> {
-        while self.position < self.bytes.len() {
+        while !self.end_of_content() {
             // Consume white spaces before identifying the line
             self.consume_whitespace();
 
@@ -76,6 +78,10 @@ impl<'a> Tokenizer<'a> {
     }
 
     fn tokenize(&mut self) -> Option<Vec<Token<'a>>> {
+        if self.end_of_content() {
+            return None;
+        }
+
         let byte_type = self.identify_byte();
 
         match byte_type {
@@ -109,7 +115,7 @@ impl<'a> Tokenizer<'a> {
     /// let token = self.identify_byte();
     /// ```
     fn identify_byte(&mut self) -> Type<'a> {
-        let curr_byte = self.next_byte();
+        let curr_byte = self.next_byte().unwrap();
 
         if !not_new_line(curr_byte) {
             return Type::UnRecognized;
@@ -118,14 +124,14 @@ impl<'a> Tokenizer<'a> {
         if curr_byte == b'#' {
             let mut size = 1;
 
-            while self.next_byte() == b'#' {
+            while !self.end_of_content() && self.next_byte().unwrap() == b'#' {
                 size += 1;
             }
 
             // Go back to get the last not matching character
             self.go_back(1);
 
-            if size > 6 || self.seek_next_byte() != b' ' {
+            if size > 6 || self.seek_next_byte().unwrap() != b' ' {
                 self.go_back(size);
                 Type::Paragraph
             } else {
@@ -134,7 +140,7 @@ impl<'a> Tokenizer<'a> {
         } else if curr_byte == b'>' {
             // Don't Go back cause we want to escape the ">"
             Type::Blockquote
-        } else if curr_byte == b'-' && self.seek_next_byte() == b' ' {
+        } else if curr_byte == b'-' && self.seek_next_byte().unwrap() == b' ' {
             Type::UnorderedList
         } else if (curr_byte as char).is_numeric()
             && is_string_numeric(
@@ -210,7 +216,7 @@ impl<'a> Tokenizer<'a> {
     }
 
     fn tokenize_header(&mut self, size: usize) -> Vec<Token<'a>> {
-        if size >= 7 || self.next_byte() != b' ' {
+        if size >= 7 || self.next_byte().unwrap() != b' ' {
             self.go_back(size);
 
             self.tokenize_paragraph()
@@ -227,13 +233,13 @@ impl<'a> Tokenizer<'a> {
 
     fn tokenize_paragraph(&mut self) -> Vec<Token<'a>> {
         let mut result = vec![Token::Paragraph];
-        let text = self.consume_while_return_str(not_new_line);
+        let (text, mut tokens) = self.consume_while_with_emph(not_new_line);
 
         if text.ends_with("  ") {
             result.push(Token::Text(text.trim_end()));
             result.push(Token::LineBreak);
         } else {
-            result.push(Token::Text(text))
+            result.append(&mut tokens)
         }
 
         result.push(Token::ClosedParagraph);
@@ -250,7 +256,106 @@ impl<'a> Tokenizer<'a> {
         self.consume_while(|byte| byte == b' ');
     }
 
-    /// Consumes all bytes
+    /// Consumes all bytes and return the Tokens,
+    /// useful for tokenizing parts where there might be emphasis parts, links and images
+    /// on the condition you've provided
+    /// # Example
+    /// ```
+    /// self.consume_while(|byte| byte == b' ');
+    /// ```
+    fn consume_while_with_emph<F>(&mut self, condition: F) -> (&'a str, Vec<Token<'a>>)
+    where
+        F: Fn(u8) -> bool,
+    {
+        let start = self.position;
+        let mut result = vec![];
+        let mut bold_start = false;
+        let mut italic_start = false;
+
+        let mut text_pos = 0;
+
+        let push_text_token = |result: &mut Vec<Token<'a>>,
+                               content: &'a str,
+                               position: usize,
+                               text_pos: &mut usize| {
+            if *text_pos > 0 {
+                // Subtract 1 on both sides to catch the last checked byte
+                result.push(Token::Text(
+                    &content[position - 1 - *text_pos..position - 1],
+                ));
+                *text_pos = 0;
+            }
+        };
+
+        while !self.end_of_content() {
+            let next_byte = self.next_byte().unwrap();
+
+            if !condition(next_byte) {
+                self.go_back(1);
+                break;
+            } else {
+                if {
+                    let condition = next_byte == b'*' && self.seek_next_byte().eq(&Some(b'*'));
+
+                    if condition {
+                        push_text_token(&mut result, self.content, self.position, &mut text_pos);
+                        //                                          ⬇
+                        // Skip the next "*" of the bold pattern ("**")
+                        self.go_forward(1);
+                    }
+                    condition
+                } {
+                    match bold_start {
+                        false => result.push(Token::Bold),
+                        true => result.push(Token::ClosedBold),
+                    }
+                    bold_start = !bold_start;
+                } else if {
+                    let condition = next_byte == b'*';
+
+                    if condition {
+                        push_text_token(&mut result, self.content, self.position, &mut text_pos);
+                    }
+
+                    condition
+                } {
+                    match italic_start {
+                        false => result.push(Token::Italic),
+                        true => result.push(Token::ClosedItalic),
+                    }
+                    italic_start = !italic_start;
+                } else if {
+                    let condition = next_byte == b'`';
+
+                    if condition {
+                        push_text_token(&mut result, self.content, self.position, &mut text_pos);
+                    }
+
+                    condition
+                } {
+                    match italic_start {
+                        false => result.push(Token::Code),
+                        true => result.push(Token::ClosedCode),
+                    }
+                    italic_start = !italic_start;
+                } else {
+                    text_pos += 1;
+                }
+            }
+        }
+
+        // Append the rest of the text
+        if text_pos > 0 {
+            result.push(Token::Text(
+                &self.content[self.position - text_pos..self.position],
+            ));
+        }
+
+        (&self.content[start..self.position], result)
+    }
+
+    /// Consumes all bytes and return the `(start, end)` positions based
+    /// on the condition you've provided
     /// # Example
     /// ```
     /// self.consume_while(|byte| byte == b' ');
@@ -261,14 +366,19 @@ impl<'a> Tokenizer<'a> {
     {
         let start = self.position;
 
-        while self.position < self.bytes.len() {
-            if !condition(self.next_byte()) {
+        while !self.end_of_content() {
+            if !condition(self.next_byte().unwrap()) {
                 self.go_back(1);
                 break;
             }
         }
 
         (start, self.position)
+    }
+
+    /// Check if the currrent position is at the end of the string
+    fn end_of_content(&self) -> bool {
+        self.position >= self.bytes.len()
     }
 
     /// Consumes all bytes
@@ -294,10 +404,11 @@ impl<'a> Tokenizer<'a> {
         (start, end)
     }
 
-    /// Consumes all bytes
+    /// Consumes all bytes and return the string based on the condition you provided
+    /// Without incrementing the tokenizer position
     /// # Example
     /// ```
-    /// let content = self.consume_while_return_str(|byte| byte == b' ');
+    /// let content = self.consume_while_return_str_without_inc(|byte| byte == b' ');
     /// ```
     fn consume_while_return_str_without_inc<F>(&mut self, condition: F) -> &'a str
     where
@@ -308,7 +419,7 @@ impl<'a> Tokenizer<'a> {
         &self.content[s..e]
     }
 
-    /// Consumes all bytes
+    /// Consumes all bytes and return the string based on the condition you provided
     /// # Example
     /// ```
     /// let content = self.consume_while_return_str(|byte| byte == b' ');
@@ -327,11 +438,15 @@ impl<'a> Tokenizer<'a> {
     /// ```
     /// let next_byte = self.next_byte();
     /// ```
-    fn next_byte(&mut self) -> u8 {
-        let byte = self.bytes[self.position];
-        self.go_forward(1);
+    fn next_byte(&mut self) -> Option<u8> {
+        if self.end_of_content() {
+            None
+        } else {
+            let byte = self.bytes[self.position];
+            self.go_forward(1);
 
-        byte
+            Some(byte)
+        }
     }
 
     fn go_back(&mut self, num: usize) {
@@ -347,10 +462,14 @@ impl<'a> Tokenizer<'a> {
     /// ```
     /// let next_byte = self.seek_next_byte();
     /// ```
-    fn seek_next_byte(&mut self) -> u8 {
-        let byte = self.bytes[self.position];
+    fn seek_next_byte(&mut self) -> Option<u8> {
+        if self.end_of_content() {
+            None
+        } else {
+            let byte = self.bytes[self.position];
 
-        byte
+            Some(byte)
+        }
     }
 
     /// Get the last byte without changing the position of the tokenizer
