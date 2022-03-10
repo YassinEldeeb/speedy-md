@@ -170,31 +170,29 @@ impl<'a> Tokenizer<'a> {
     }
 
     fn tokenize_ordered_list(&mut self) -> Vec<Token<'a>> {
-        vec![
-            Token::OrderedList,
-            Token::Li,
-            Token::Text(
-                self.consume_while_return_str(not_new_line)
-                    .split_once(".")
-                    .unwrap()
-                    .1
-                    .trim_start(),
-            ),
-            Token::ClosedLi,
-            Token::ClosedOrderedList,
-        ]
+        let mut result = vec![Token::OrderedList, Token::Li];
+
+        let (_, mut tokens) = self.consume_while_with_emph(not_new_line);
+        result.append(&mut tokens);
+
+        result.push(Token::ClosedLi);
+        result.push(Token::ClosedOrderedList);
+
+        result
     }
 
     fn tokenize_unordered_list(&mut self) -> Vec<Token<'a>> {
         self.consume_whitespace();
 
-        vec![
-            Token::UnorderedList,
-            Token::Li,
-            Token::Text(self.consume_while_return_str(not_new_line)),
-            Token::ClosedLi,
-            Token::ClosedUnorderedList,
-        ]
+        let mut result = vec![Token::UnorderedList, Token::Li];
+
+        let (_, mut tokens) = self.consume_while_with_emph(not_new_line);
+        result.append(&mut tokens);
+
+        result.push(Token::ClosedLi);
+        result.push(Token::ClosedUnorderedList);
+
+        result
     }
 
     fn tokenize_blockquote(&mut self) -> Vec<Token<'a>> {
@@ -222,12 +220,13 @@ impl<'a> Tokenizer<'a> {
             self.tokenize_paragraph()
         } else {
             self.consume_whitespace();
+            let mut result = vec![Token::Header(size)];
 
-            vec![
-                Token::Header(size),
-                Token::Text(self.consume_while_return_str(not_new_line)),
-                Token::ClosedHeader(size),
-            ]
+            let (_, mut tokens) = self.consume_while_with_emph(not_new_line);
+            result.append(&mut tokens);
+            result.push(Token::ClosedHeader(size));
+
+            result
         }
     }
 
