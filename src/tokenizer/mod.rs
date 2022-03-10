@@ -8,7 +8,7 @@ enum Type<'a> {
     Header(usize),
     Paragraph,
     Blockquote,
-    OrderedList,
+    OrderedList(u32),
     UnorderedList,
     Link { label: &'a str, url: &'a str },
     HorizontalRule,
@@ -27,7 +27,7 @@ pub enum Token<'a> {
     ClosedParagraph,
     Blockquote,
     ClosedBlockquote,
-    OrderedList,
+    OrderedList(u32),
     ClosedOrderedList,
     UnorderedList,
     ClosedUnorderedList,
@@ -89,7 +89,7 @@ impl<'a> Tokenizer<'a> {
             Type::Paragraph => Some(self.tokenize_paragraph()),
             Type::Blockquote => Some(self.tokenize_blockquote()),
             Type::UnorderedList => Some(self.tokenize_unordered_list()),
-            Type::OrderedList => Some(self.tokenize_ordered_list()),
+            Type::OrderedList(start) => Some(self.tokenize_ordered_list(start)),
             Type::Link { label, url } => Some(self.tokenize_link(label, url)),
             Type::HorizontalRule => Some(vec![Token::LineSeparator]),
             _ => None,
@@ -150,7 +150,18 @@ impl<'a> Tokenizer<'a> {
                     .0,
             )
         {
-            Type::OrderedList
+            self.go_back(1);
+
+            let num = self
+                .consume_while_return_str_without_inc(not_new_line)
+                .split_once(".")
+                .unwrap()
+                .0;
+
+            // Skip "12".len() + ".".len() + next_char that we return back previously
+            self.go_forward(num.len() + 2);
+
+            Type::OrderedList(num.parse().unwrap())
         } else if (curr_byte == b'*' || curr_byte == b'-' || curr_byte == b'_')
             && (self.check_if_all_next_char_matching('*')
                 || self.check_if_all_next_char_matching('-')
@@ -169,14 +180,25 @@ impl<'a> Tokenizer<'a> {
         vec![Token::Link { label, url }]
     }
 
-    fn tokenize_ordered_list(&mut self) -> Vec<Token<'a>> {
-        let mut result = vec![Token::OrderedList, Token::Li];
+    fn recursively_next_tokens(&mut self, result: &mut Vec<Token<'a>>) {
+        let tokens = self.tokenize();
 
-        let (_, mut tokens) = self.consume_while_with_emph(not_new_line);
-        result.append(&mut tokens);
+        if let Some(tokens) = tokens {
+            for t in tokens {
+                result.push(t)
+            }
+        }
+    }
+
+    fn tokenize_ordered_list(&mut self, start: u32) -> Vec<Token<'a>> {
+        self.consume_whitespace();
+
+        let mut result = vec![Token::OrderedList(start), Token::Li];
+
+        self.recursively_next_tokens(&mut result);
 
         result.push(Token::ClosedLi);
-        result.push(Token::ClosedOrderedList);
+        result.push(Token::ClosedUnorderedList);
 
         result
     }
@@ -186,8 +208,7 @@ impl<'a> Tokenizer<'a> {
 
         let mut result = vec![Token::UnorderedList, Token::Li];
 
-        let (_, mut tokens) = self.consume_while_with_emph(not_new_line);
-        result.append(&mut tokens);
+        self.recursively_next_tokens(&mut result);
 
         result.push(Token::ClosedLi);
         result.push(Token::ClosedUnorderedList);
@@ -200,13 +221,7 @@ impl<'a> Tokenizer<'a> {
 
         self.consume_whitespace();
 
-        let tokens = self.tokenize();
-
-        if let Some(tokens) = tokens {
-            for t in tokens {
-                result.push(t)
-            }
-        }
+        self.recursively_next_tokens(&mut result);
 
         result.push(Token::ClosedBlockquote);
 
