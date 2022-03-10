@@ -271,6 +271,7 @@ impl<'a> Tokenizer<'a> {
         let mut result = vec![];
         let mut bold_start = false;
         let mut italic_start = false;
+        let mut code_start = false;
 
         let mut text_pos = 0;
 
@@ -294,8 +295,10 @@ impl<'a> Tokenizer<'a> {
                 self.go_back(1);
                 break;
             } else {
+                // Bold
                 if {
-                    let condition = next_byte == b'*' && self.seek_next_byte().eq(&Some(b'*'));
+                    let condition =
+                        next_byte == b'*' && self.seek_next_byte().eq(&Some(b'*')) && !code_start;
 
                     if condition {
                         push_text_token(&mut result, self.content, self.position, &mut text_pos);
@@ -310,8 +313,10 @@ impl<'a> Tokenizer<'a> {
                         true => result.push(Token::ClosedBold),
                     }
                     bold_start = !bold_start;
-                } else if {
-                    let condition = next_byte == b'*';
+                }
+                // Italic
+                else if {
+                    let condition = (next_byte == b'*' || next_byte == b'_') && !code_start;
 
                     if condition {
                         push_text_token(&mut result, self.content, self.position, &mut text_pos);
@@ -324,7 +329,9 @@ impl<'a> Tokenizer<'a> {
                         true => result.push(Token::ClosedItalic),
                     }
                     italic_start = !italic_start;
-                } else if {
+                }
+                // Code
+                else if {
                     let condition = next_byte == b'`';
 
                     if condition {
@@ -333,11 +340,11 @@ impl<'a> Tokenizer<'a> {
 
                     condition
                 } {
-                    match italic_start {
+                    match code_start {
                         false => result.push(Token::Code),
                         true => result.push(Token::ClosedCode),
                     }
-                    italic_start = !italic_start;
+                    code_start = !code_start;
                 } else {
                     text_pos += 1;
                 }
