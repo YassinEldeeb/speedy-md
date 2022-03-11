@@ -2,7 +2,7 @@ mod utils;
 use regex::Replacer;
 use utils::*;
 
-use std::{borrow::Borrow, vec};
+use std::{borrow::Borrow, time::Instant, vec};
 
 #[derive(Debug, PartialEq, Clone)]
 enum Type<'a> {
@@ -249,7 +249,7 @@ impl<'a> Tokenizer<'a> {
     fn tokenize_paragraph(&mut self) -> Vec<Token<'a>> {
         let mut result = vec![Token::Paragraph];
         let (text, mut tokens) =
-            self.consume_while_with_emph(|b, t| t == Type::Paragraph || b == b'\n' || b == b'\r');
+            self.consume_while_with_emph(|b, t| t == Type::Paragraph || b == b'\n');
 
         if text.ends_with("  ") {
             result.push(Token::Text(text.trim_end()));
@@ -290,6 +290,7 @@ impl<'a> Tokenizer<'a> {
         let mut code_start = false;
 
         let mut text_pos = 0;
+        let mut prev_pos = self.position;
 
         let push_text_token = |result: &mut Vec<Token<'a>>,
                                content: &'a str,
@@ -321,9 +322,9 @@ impl<'a> Tokenizer<'a> {
                 curr_line_type = t;
             }
 
-            // TODO: trim_start when searching a new line
-
-            if !condition(next_byte, curr_line_type.clone()) {
+            if !condition(next_byte, curr_line_type.clone())
+                || next_byte == b'\n' && self.seek_next_byte() == Some(b'\n')
+            {
                 self.go_back(1);
                 break;
             } else {
@@ -333,6 +334,7 @@ impl<'a> Tokenizer<'a> {
                         next_byte == b'*' && self.seek_next_byte().eq(&Some(b'*')) && !code_start;
 
                     if condition {
+                        prev_pos += text_pos + 2;
                         push_text_token(&mut result, self.content, self.position, &mut text_pos);
                         //                                          ⬇
                         // Skip the next "*" of the bold pattern ("**")
@@ -351,6 +353,7 @@ impl<'a> Tokenizer<'a> {
                     let condition = (next_byte == b'*' || next_byte == b'_') && !code_start;
 
                     if condition {
+                        prev_pos += text_pos + 1;
                         push_text_token(&mut result, self.content, self.position, &mut text_pos);
                     }
 
@@ -367,6 +370,7 @@ impl<'a> Tokenizer<'a> {
                     let condition = next_byte == b'`';
 
                     if condition {
+                        prev_pos += text_pos + 1;
                         push_text_token(&mut result, self.content, self.position, &mut text_pos);
                     }
 
@@ -385,9 +389,18 @@ impl<'a> Tokenizer<'a> {
 
         // Append the rest of the text
         if text_pos > 0 {
-            result.push(Token::Text(
-                &self.content[self.position - text_pos..self.position].trim_end(),
-            ));
+            let lines: Vec<&str> = self.content
+                [self.position - (self.position - prev_pos)..self.position - 1]
+                .lines()
+                .collect();
+
+            for (idx, &l) in lines.iter().enumerate() {
+                result.push(Token::Text(l.trim_start()));
+
+                if idx < lines.len() - 1 {
+                    result.push(Token::Text(" "));
+                }
+            }
         }
 
         (&self.content[start..self.position], result)
@@ -482,9 +495,15 @@ impl<'a> Tokenizer<'a> {
             None
         } else {
             let byte = self.bytes[self.position];
-            self.go_forward(1);
 
-            Some(byte)
+            if byte == b'\r' {
+                let next_byte = self.bytes[self.position + 1];
+                self.go_forward(2);
+                Some(next_byte)
+            } else {
+                self.go_forward(1);
+                Some(byte)
+            }
         }
     }
 
@@ -507,18 +526,22 @@ impl<'a> Tokenizer<'a> {
         } else {
             let byte = self.bytes[self.position];
 
-            Some(byte)
+            if byte == b'\r' {
+                Some(self.bytes[self.position + 1])
+            } else {
+                Some(byte)
+            }
         }
     }
 
-    /// Get the last byte without changing the position of the tokenizer
-    /// # Example
-    /// ```
-    /// let last_byte = self.last_byte();
-    /// ```
-    fn last_byte(&mut self) -> u8 {
-        let byte = self.bytes[self.position - 1];
+    // /// Get the last byte without changing the position of the tokenizer
+    // /// # Example
+    // /// ```
+    // /// let last_byte = self.last_byte();
+    // /// ```
+    // fn last_byte(&mut self) -> u8 {
+    //     let byte = self.bytes[self.position - 1];
 
-        byte
-    }
+    //     byte
+    // }
 }
