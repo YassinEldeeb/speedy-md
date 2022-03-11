@@ -1,9 +1,10 @@
 mod utils;
+use regex::Replacer;
 use utils::*;
 
 use std::{borrow::Borrow, vec};
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Clone)]
 enum Type<'a> {
     Header(usize),
     Paragraph,
@@ -180,7 +181,7 @@ impl<'a> Tokenizer<'a> {
         vec![Token::Link { label, url }]
     }
 
-    fn recursively_next_tokens(&mut self, result: &mut Vec<Token<'a>>) {
+    fn recursively_next_tokens(&mut self, result: &mut Vec<Token<'a>>, t: Type) {
         let tokens = self.tokenize();
 
         if let Some(tokens) = tokens {
@@ -195,7 +196,7 @@ impl<'a> Tokenizer<'a> {
 
         let mut result = vec![Token::OrderedList(start), Token::Li];
 
-        self.recursively_next_tokens(&mut result);
+        // self.recursively_next_tokens(&mut result, Type::OrderedList(_));
 
         result.push(Token::ClosedLi);
         result.push(Token::ClosedUnorderedList);
@@ -208,7 +209,7 @@ impl<'a> Tokenizer<'a> {
 
         let mut result = vec![Token::UnorderedList, Token::Li];
 
-        self.recursively_next_tokens(&mut result);
+        self.recursively_next_tokens(&mut result, Type::UnorderedList);
 
         result.push(Token::ClosedLi);
         result.push(Token::ClosedUnorderedList);
@@ -221,7 +222,7 @@ impl<'a> Tokenizer<'a> {
 
         self.consume_whitespace();
 
-        self.recursively_next_tokens(&mut result);
+        self.recursively_next_tokens(&mut result, Type::Blockquote);
 
         result.push(Token::ClosedBlockquote);
 
@@ -237,7 +238,7 @@ impl<'a> Tokenizer<'a> {
             self.consume_whitespace();
             let mut result = vec![Token::Header(size)];
 
-            let (_, mut tokens) = self.consume_while_with_emph(not_new_line);
+            let (_, mut tokens) = self.consume_while_with_emph(|b, _| not_new_line(b));
             result.append(&mut tokens);
             result.push(Token::ClosedHeader(size));
 
@@ -247,7 +248,8 @@ impl<'a> Tokenizer<'a> {
 
     fn tokenize_paragraph(&mut self) -> Vec<Token<'a>> {
         let mut result = vec![Token::Paragraph];
-        let (text, mut tokens) = self.consume_while_with_emph(not_new_line);
+        let (text, mut tokens) =
+            self.consume_while_with_emph(|b, t| t == Type::Paragraph || b == b'\n' || b == b'\r');
 
         if text.ends_with("  ") {
             result.push(Token::Text(text.trim_end()));
@@ -279,7 +281,7 @@ impl<'a> Tokenizer<'a> {
     /// ```
     fn consume_while_with_emph<F>(&mut self, condition: F) -> (&'a str, Vec<Token<'a>>)
     where
-        F: Fn(u8) -> bool,
+        F: Fn(u8, Type) -> bool,
     {
         let start = self.position;
         let mut result = vec![];
@@ -302,10 +304,26 @@ impl<'a> Tokenizer<'a> {
             }
         };
 
+        let mut curr_line_type = Type::UnRecognized;
+
         while !self.end_of_content() {
             let next_byte = self.next_byte().unwrap();
 
-            if !condition(next_byte) {
+            if !not_new_line(next_byte) || curr_line_type == Type::UnRecognized {
+                let curr_pos = self.position;
+
+                self.go_back(1);
+                let t = self.identify_byte();
+                let offset = self.position - curr_pos;
+
+                self.go_back(offset);
+
+                curr_line_type = t;
+            }
+
+            // TODO: trim_start when searching a new line
+
+            if !condition(next_byte, curr_line_type.clone()) {
                 self.go_back(1);
                 break;
             } else {
@@ -368,7 +386,7 @@ impl<'a> Tokenizer<'a> {
         // Append the rest of the text
         if text_pos > 0 {
             result.push(Token::Text(
-                &self.content[self.position - text_pos..self.position],
+                &self.content[self.position - text_pos..self.position].trim_end(),
             ));
         }
 
