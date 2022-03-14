@@ -1,7 +1,6 @@
-H**e**llo
-Guys
+Hello  
+World
 
-Woowiee
 
-My name is
-cool
+
+Wow!
