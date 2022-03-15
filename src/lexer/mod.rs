@@ -243,10 +243,13 @@ impl<'a> Lexer<'a> {
             if is_new_line(next_byte) || curr_line_type == Type::UnRecognized {
                 let curr_pos = self.position;
 
-                self.go_back(curr_pos - curr);
-                let t = self.identify_byte();
-                let offset = self.position - curr_pos;
+                let last_byte_offset = curr_pos - curr;
 
+                self.go_back(last_byte_offset);
+                let t = self.identify_byte();
+                self.go_forward(last_byte_offset);
+
+                let offset = self.position - curr_pos;
                 self.go_back(offset);
 
                 last_line_type = curr_line_type;
