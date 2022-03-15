@@ -1,4 +1,4 @@
-use speedy_md::Tokenizer;
+use speedy_md::Lexer;
 use std::{fs, time::Instant};
 
 fn main() {
@@ -6,7 +6,7 @@ fn main() {
 
     let now = Instant::now();
 
-    let res = Tokenizer::new(&content).run();
+    let res = Lexer::new(&content).run();
 
     let elapsed = now.elapsed();
 

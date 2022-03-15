@@ -1,2 +1,2 @@
-mod tokenizer;
-pub use tokenizer::*;
+mod lexer;
+pub use lexer::*;

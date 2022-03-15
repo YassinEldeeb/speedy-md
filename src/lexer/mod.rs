@@ -1,8 +1,6 @@
 mod utils;
-use regex::Replacer;
+use std::vec;
 use utils::*;
-
-use std::{borrow::Borrow, time::Instant, vec};
 
 #[derive(Debug, PartialEq, Clone)]
 enum Type<'a> {
@@ -44,24 +42,20 @@ pub enum Token<'a> {
 }
 
 #[derive(Debug)]
-pub struct Tokenizer<'a> {
+pub struct Lexer<'a> {
     position: usize,
-    last_type: Type<'a>,
-    open_paragraph_tag: bool,
     bytes: &'a [u8],
     content: &'a str,
     result: Option<Vec<Token<'a>>>,
 }
 
-impl<'a> Tokenizer<'a> {
+impl<'a> Lexer<'a> {
     pub fn new(content: &'a str) -> Self {
-        Tokenizer {
+        Lexer {
             content,
             position: 0,
-            last_type: Type::UnRecognized,
             bytes: content.as_bytes(),
             result: Some(Vec::new()),
-            open_paragraph_tag: false,
         }
     }
 
@@ -87,52 +81,32 @@ impl<'a> Tokenizer<'a> {
             return None;
         }
 
-        let curr_byte = self.seek_next_byte().unwrap();
         let byte_type = self.identify_byte();
-
-        if (curr_byte == b'\n' && self.seek_next_byte() == Some(b'\n')
-            || curr_byte == b'\n' && self.end_of_content()
-            || (byte_type != Type::UnRecognized && byte_type != Type::Paragraph))
-            && self.open_paragraph_tag
-        {
-            self.open_paragraph_tag = false;
-            self.result.as_mut().unwrap().push(Token::ClosedParagraph);
-            self.last_type = Type::UnRecognized;
-        }
 
         match byte_type {
             Type::Header(size) => Some(self.tokenize_header(size)),
             Type::Paragraph => Some(self.tokenize_paragraph()),
-            Type::Blockquote => Some(self.tokenize_blockquote()),
-            Type::UnorderedList => Some(self.tokenize_unordered_list()),
-            Type::OrderedList(start) => Some(self.tokenize_ordered_list(start)),
-            Type::Link { label, url } => Some(self.tokenize_link(label, url)),
+            // Type::Blockquote => Some(self.tokenize_blockquote()),
+            // Type::UnorderedList => Some(self.tokenize_unordered_list()),
+            // Type::OrderedList(start) => Some(self.tokenize_ordered_list(start)),
+            // Type::Link { label, url } => Some(self.tokenize_link(label, url)),
             Type::HorizontalRule => Some(vec![Token::LineSeparator]),
             _ => None,
         }
     }
 
     fn check_if_all_next_char_matching(&mut self, ident: char) -> bool {
-        let res = self.consume_while_return_str(not_new_line);
+        let curr_pos = self.position;
+        let res = self.consume_while_return_str(|b| not_new_line(b));
 
         let cond = res.chars().all(|a| a == ident) && res.len() >= 2;
 
         if cond {
             cond
         } else {
-            self.go_back(res.len());
+            self.go_back(self.position - curr_pos);
             cond
         }
-    }
-
-    fn identify_byte_without_inc(&mut self) -> Type<'a> {
-        let last_pos = self.position;
-
-        let res = self.identify_byte();
-
-        self.position = self.position - last_pos;
-
-        res
     }
 
     /// Identifies the current byte and return a `Token` type
@@ -202,79 +176,7 @@ impl<'a> Tokenizer<'a> {
         }
     }
 
-    fn tokenize_link(&mut self, label: &'a str, url: &'a str) -> Vec<Token<'a>> {
-        vec![Token::Link { label, url }]
-    }
-
-    fn recursively_next_tokens(&mut self, result: &mut Vec<Token<'a>>, t: &Type) {
-        let tokens = self.tokenize();
-
-        if let Some(tokens) = tokens {
-            for t in tokens {
-                result.push(t)
-            }
-        }
-
-        // let byte_t = self.identify_byte_without_inc();
-
-        // println!("{:?}", byte_t);
-        // while byte_t == *t {
-        //     // Consume the identifier
-        //     self.identify_byte();
-        //     let tokens = self.tokenize();
-
-        //     if let Some(tokens) = tokens {
-        //         for t in tokens {
-        //             result.push(t)
-        //         }
-        //     }
-        // }
-    }
-
-    fn tokenize_ordered_list(&mut self, start: u32) -> Vec<Token<'a>> {
-        self.last_type = Type::OrderedList(start);
-        self.consume_whitespace();
-
-        let mut result = vec![Token::OrderedList(start), Token::Li];
-
-        self.recursively_next_tokens(&mut result, &Type::OrderedList(start));
-
-        result.push(Token::ClosedLi);
-        result.push(Token::ClosedUnorderedList);
-
-        result
-    }
-
-    fn tokenize_unordered_list(&mut self) -> Vec<Token<'a>> {
-        self.last_type = Type::UnorderedList;
-        self.consume_whitespace();
-
-        let mut result = vec![Token::UnorderedList, Token::Li];
-
-        self.recursively_next_tokens(&mut result, &Type::UnorderedList);
-
-        result.push(Token::ClosedLi);
-        result.push(Token::ClosedUnorderedList);
-
-        result
-    }
-
-    fn tokenize_blockquote(&mut self) -> Vec<Token<'a>> {
-        self.last_type = Type::Blockquote;
-
-        let mut result = vec![Token::Blockquote];
-
-        self.consume_whitespace();
-
-        self.recursively_next_tokens(&mut result, &Type::Blockquote);
-
-        result.push(Token::ClosedBlockquote);
-
-        result
-    }
-
     fn tokenize_header(&mut self, size: usize) -> Vec<Token<'a>> {
-        self.last_type = Type::Header(size);
         if size >= 7 || self.next_byte().unwrap() != b' ' {
             self.go_back(size);
 
@@ -292,32 +194,23 @@ impl<'a> Tokenizer<'a> {
     }
 
     fn tokenize_paragraph(&mut self) -> Vec<Token<'a>> {
-        let mut result = Vec::new();
+        let mut result = vec![Token::Paragraph];
+        let text = self.consume_paragraph();
 
-        if self.open_paragraph_tag {
-            result.push(Token::Text(" "));
+        let lines: Vec<&str> = text.lines().collect();
+        for (idx, &l) in lines.iter().enumerate() {
+            let line_break = l.ends_with("  ");
+
+            result.push(Token::Text(l.trim_end()));
+
+            if line_break {
+                result.push(Token::LineBreak)
+            } else if idx < lines.len() - 1 {
+                result.push(Token::Text(" "));
+            }
         }
 
-        if self.last_type != Type::Paragraph {
-            result.push(Token::Paragraph);
-            self.open_paragraph_tag = true;
-        }
-
-        let text = self.consume_while_return_str(not_new_line);
-        let line_break = text.ends_with("  ");
-
-        result.push(Token::Text(text.trim_end()));
-
-        if line_break {
-            result.push(Token::LineBreak);
-        }
-
-        self.last_type = Type::Paragraph;
-
-        if self.end_of_content() {
-            self.open_paragraph_tag = false;
-            result.push(Token::ClosedParagraph);
-        }
+        result.push(Token::ClosedParagraph);
 
         result
     }
@@ -331,60 +224,52 @@ impl<'a> Tokenizer<'a> {
         self.consume_while(|byte| byte == b' ');
     }
 
-    /// Consumes all bytes and return the Tokens,
-    /// useful for tokenizing parts where there might be emphasis parts, links and images
+    /// Consumes all bytes and return the `(start, end)` positions based
     /// on the condition you've provided
     /// # Example
     /// ```
-    /// self.consume_while(|byte| byte == b' ');
+    /// self.consume_paragraph();
     /// ```
-    fn consume_while_line_type_check<F>(&mut self, condition: F) -> Vec<Token<'a>>
-    where
-        F: Fn(u8, Type) -> bool,
-    {
+    fn consume_paragraph(&mut self) -> &'a str {
         let start = self.position;
 
+        let mut last_line_type = Type::UnRecognized;
         let mut curr_line_type = Type::UnRecognized;
 
         while !self.end_of_content() {
+            let curr = self.position;
             let next_byte = self.next_byte().unwrap();
 
             if is_new_line(next_byte) || curr_line_type == Type::UnRecognized {
                 let curr_pos = self.position;
 
-                self.go_back(1);
+                self.go_back(curr_pos - curr);
                 let t = self.identify_byte();
                 let offset = self.position - curr_pos;
 
                 self.go_back(offset);
 
+                last_line_type = curr_line_type;
                 curr_line_type = t;
             }
 
-            if !condition(next_byte, curr_line_type.clone())
-                || next_byte == b'\n' && self.seek_next_byte() == Some(b'\n')
+            let two_seq_line_breaks =
+                curr_line_type == Type::UnRecognized && last_line_type == Type::UnRecognized;
+
+            if curr_line_type != Type::Paragraph && curr_line_type != Type::UnRecognized
+                || two_seq_line_breaks
             {
+                if two_seq_line_breaks {
+                    self.go_back(2);
+                }
                 self.go_back(1);
                 break;
             }
         }
 
-        let mut result = Vec::new();
-        let lines: Vec<&str> = self.content[start..self.position]
-            .trim_end()
-            .lines()
-            .collect();
-
-        for (idx, &l) in lines.iter().enumerate() {
-            result.push(Token::Text(l.trim_start()));
-
-            if idx < lines.len() - 1 {
-                result.push(Token::Text(" "));
-            }
-        }
-
-        result
+        &self.content[start..self.position]
     }
+
     /// Consumes all bytes and return the `(start, end)` positions based
     /// on the condition you've provided
     /// # Example
@@ -398,7 +283,9 @@ impl<'a> Tokenizer<'a> {
         let start = self.position;
 
         while !self.end_of_content() {
-            if !condition(self.next_byte().unwrap()) {
+            let next_byte = self.next_byte().unwrap();
+
+            if !condition(next_byte) {
                 self.go_back(1);
                 break;
             }
@@ -436,7 +323,7 @@ impl<'a> Tokenizer<'a> {
     }
 
     /// Consumes all bytes and return the string based on the condition you provided
-    /// Without incrementing the tokenizer position
+    /// Without incrementing the Lexer position
     /// # Example
     /// ```
     /// let content = self.consume_while_return_str_without_inc(|byte| byte == b' ');
@@ -468,7 +355,7 @@ impl<'a> Tokenizer<'a> {
         }
     }
 
-    /// Get the next byte while also incrementing the position of the tokenizer
+    /// Get the next byte while also incrementing the position of the Lexer
     /// # Example
     /// ```
     /// let next_byte = self.next_byte();
@@ -498,7 +385,7 @@ impl<'a> Tokenizer<'a> {
         self.position += num;
     }
 
-    /// Get the next byte without changing the position of the tokenizer
+    /// Get the next byte without changing the position of the Lexer
     /// # Example
     /// ```
     /// let next_byte = self.seek_next_byte();
@@ -517,7 +404,7 @@ impl<'a> Tokenizer<'a> {
         }
     }
 
-    /// Get the last byte without changing the position of the tokenizer
+    /// Get the last byte without changing the position of the Lexer
     /// # Example
     /// ```
     /// let last_byte = self.last_byte();
